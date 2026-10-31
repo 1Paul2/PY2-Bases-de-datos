@@ -28,13 +28,157 @@ Terminado 100%
 
 ## Contenido
 
-1. [Arquitectura](#arquitectura)
-2. [Tecnologías utilizadas](#tecnologías-utilizadas)
-3. [Estructura del repositorio](#estructura-del-repositorio)
-4. [Instalación y ejecución](#instalación-y-ejecución)
-5. [Objetivos alcanzados](#objetivos-alcanzados)
-6. [Objetivos no alcanzados y decisiones](#objetivos-no-alcanzados-y-decisiones)
-7. [Referencia de la API](#referencia-de-la-api)
+1. [Diseño distribuido (Proyecto 2)](#diseño-distribuido-proyecto-2)
+2. [Arquitectura](#arquitectura)
+3. [Tecnologías utilizadas](#tecnologías-utilizadas)
+4. [Estructura del repositorio](#estructura-del-repositorio)
+5. [Instalación y ejecución](#instalación-y-ejecución)
+6. [Objetivos alcanzados](#objetivos-alcanzados)
+7. [Objetivos no alcanzados y decisiones](#objetivos-no-alcanzados-y-decisiones)
+8. [Referencia de la API](#referencia-de-la-api)
+
+---
+
+## Diseño distribuido (Proyecto 2)
+
+### 1. Resumen
+
+| Nodo | Base | Qué guarda |
+|------|------|------------|
+| **Corporativo** (Plaza Roble, Escazú) | `WWI_Corporativo` | Datos sensibles de clientes, proveedores y personas; maestro de clientes, proveedores y usuarios; resúmenes para las estadísticas |
+| **San José** | `WWI_SanJose` | Catálogo compartido (sin datos sensibles); su propio inventario, ventas y compras |
+| **Limón** | `WWI_Limon` | Igual que San José, con sus propios datos |
+
+Las tres bases parten de restaurar `WideWorldImporters-Full.bak` y después se borra en cada nodo lo que no le corresponde. Así se conservan las llaves, los tipos y las relaciones originales, y los procedimientos del Proyecto 1 siguen funcionando con cambios mínimos.
+
+### 2. Fragmentación
+
+#### 2.1 Horizontal: inventario, ventas y compras por sucursal
+
+El enunciado pide que cada sucursal maneje su propio inventario y facturación. Cada fila pertenece a una sola sucursal.
+
+**Criterio para los datos existentes: el vendedor.** La base tiene 10 vendedores con unas 7 000 facturas cada uno. Cada vendedor se asigna a una sucursal, y cada factura y cada pedido van a la sucursal de quien los vendió. Revisamos que todos los pedidos tienen el mismo vendedor que su factura, así que nunca queda una factura en una sucursal y su pedido en otra.
+
+| Sucursal | Vendedores (`PersonID`) | Facturas |
+|----------|-------------------------|---------:|
+| San José | 2 Kayla Woodcock, 3 Hudson Onslow, 6 Sophia Hinton, 7 Amy Trefl, 8 Anthony Grosse | 35 134 |
+| Limón | 13 Hudson Hollinworth, 14 Lily Code, 15 Taj Shand, 16 Archer Lamble, 20 Jack Potter | 35 376 |
+
+| Tabla | Regla de fragmentación |
+|-------|------------------------|
+| `Sales.Orders`, `Sales.OrderLines` | Por el vendedor del pedido |
+| `Sales.Invoices`, `Sales.InvoiceLines` | Por el vendedor de la factura |
+| `Sales.CustomerTransactions` | Sigue a su factura |
+| `Warehouse.StockItemTransactions` | Las salidas (*Stock Issue*, 228 265) siguen a su factura; las entradas (*Stock Receipt*, 8 358) siguen a su orden de compra; los 44 ajustes de inventario se reparten por `StockItemTransactionID` par o impar |
+| `Purchasing.PurchaseOrders`, `PurchaseOrderLines`, `SupplierTransactions` | Por `PurchaseOrderID` par (San José) o impar (Limón). Las 2 074 órdenes tienen el mismo contacto, así que no hay un criterio de negocio mejor |
+
+**Por qué las compras van por sucursal y no centralizadas:** el enunciado dice que cada sucursal maneja su propio inventario, y cada compra es una entrada de inventario (*Stock Receipt*) en una sucursal concreta. Además, las estadísticas deben poder filtrarse por sucursal, y tres de ellas se calculan con compras (reportes 1, 5 y 8). Si las compras estuvieran en el corporativo, esos reportes no tendrían sucursal.
+| `Warehouse.StockItemHoldings` | Cada sucursal tiene una fila por producto. La existencia actual se reparte a la mitad (San José se queda con el sobrante si es impar) |
+
+Desde ahí, todo lo nuevo se guarda en la sucursal donde está conectado el administrador.
+
+#### 2.2 Vertical: datos sensibles de clientes, proveedores y personas
+
+El enunciado pide que los datos de privacidad y contacto estén en el corporativo y el resto en las sucursales. Cada tabla se parte en dos fragmentos que comparten la llave primaria, así que se pueden volver a unir con un `JOIN` por la llave.
+
+**`Sales.Customers`**
+
+| Fragmento | Columnas |
+|-----------|----------|
+| Sucursales (público) | `CustomerID`, `CustomerName`, `BillToCustomerID`, `CustomerCategoryID`, `BuyingGroupID`, `DeliveryMethodID`, `DeliveryCityID`, `PostalCityID`, `CreditLimit`, `AccountOpenedDate`, `StandardDiscountPercentage`, `IsStatementSent`, `IsOnCreditHold`, `PaymentDays`, `DeliveryRun`, `RunPosition`, `LastEditedBy` |
+| Corporativo (sensible) | `CustomerID`, `PrimaryContactPersonID`, `AlternateContactPersonID`, `PhoneNumber`, `FaxNumber`, `WebsiteURL`, `DeliveryAddressLine1`, `DeliveryAddressLine2`, `DeliveryPostalCode`, `DeliveryLocation`, `PostalAddressLine1`, `PostalAddressLine2`, `PostalPostalCode` |
+
+**`Purchasing.Suppliers`**
+
+| Fragmento | Columnas |
+|-----------|----------|
+| Sucursales (público) | `SupplierID`, `SupplierName`, `SupplierCategoryID`, `DeliveryMethodID`, `DeliveryCityID`, `PostalCityID`, `SupplierReference`, `PaymentDays`, `LastEditedBy` |
+| Corporativo (sensible) | `SupplierID`, `PrimaryContactPersonID`, `AlternateContactPersonID`, `BankAccountName`, `BankAccountBranch`, `BankAccountCode`, `BankAccountNumber`, `BankInternationalCode`, `PhoneNumber`, `FaxNumber`, `WebsiteURL`, `DeliveryAddressLine1`, `DeliveryAddressLine2`, `DeliveryPostalCode`, `DeliveryLocation`, `PostalAddressLine1`, `PostalAddressLine2`, `PostalPostalCode`, `InternalComments` |
+
+**`Application.People`** (contactos de clientes y proveedores, y empleados)
+
+| Fragmento | Columnas |
+|-----------|----------|
+| Sucursales (público) | `PersonID`, `FullName`, `PreferredName`, `SearchName`, `IsEmployee`, `IsSalesperson`, `LastEditedBy` |
+| Corporativo (sensible) | `PersonID`, `PhoneNumber`, `FaxNumber`, `EmailAddress`, `LogonName`, `HashedPassword`, `IsPermittedToLogon`, `Photo`, `UserPreferences`, `CustomFields` |
+
+**Por qué la ciudad se queda en las sucursales:** la ciudad (`DeliveryCityID`) es un dato general, no de contacto, y la necesitan las ventas y el reporte 10 (método de envío según el lugar). La dirección exacta, el código postal y la ubicación en el mapa sí son sensibles y van al corporativo.
+
+#### 2.3 Replicada completa: catálogos
+
+Las tres sucursales tienen el mismo catálogo, así que estas tablas están completas en los tres nodos:
+
+| Grupo | Tablas | Quién las modifica |
+|-------|--------|--------------------|
+| Productos | `Warehouse.StockItems`, `StockGroups`, `StockItemStockGroups`, `Colors`, `PackageTypes` | Cualquier nodo (el administrador crea, modifica y borra productos) |
+| Clientes y proveedores (fragmento público) | `Sales.Customers`, `Purchasing.Suppliers`, `Application.People` (públicos) | Solo el corporativo (rol Corporativo) |
+| Listas de referencia | `Application.Cities`, `StateProvinces`, `Countries`, `DeliveryMethods`, `PaymentMethods`, `TransactionTypes`, `Sales.CustomerCategories`, `BuyingGroups`, `Purchasing.SupplierCategories` | Nadie (casi no cambian) |
+
+### 3. Asignación
+
+| Tabla o fragmento | Corporativo | San José | Limón | Por qué |
+|-------------------|:-----------:|:--------:|:-----:|---------|
+| Ventas, pedidos, compras y movimientos de su sucursal | — | ✔ (los suyos) | ✔ (los suyos) | Rendimiento: cada sucursal factura sin depender de la red |
+| Inventario (`StockItemHoldings`) | — | ✔ (el suyo) | ✔ (el suyo) | Cada sucursal tiene sus propias existencias |
+| Datos sensibles de clientes, proveedores y personas | ✔ | — | — | Privacidad: los datos de contacto y bancarios quedan en un solo lugar controlado |
+| Datos públicos de clientes, proveedores y personas | ✔ (maestro) | ✔ (copia) | ✔ (copia) | Las ventas necesitan el cliente y el vendedor en el mismo nodo |
+| Catálogo de productos | ✔ | ✔ | ✔ | Todas venden los mismos productos; se replica cada cambio |
+| Listas de referencia | ✔ | ✔ | ✔ | Las usan los formularios y los filtros |
+| Usuarios del sistema | ✔ (maestro) | ✔ (copia) | ✔ (copia) | Un solo lugar para administrarlos; la copia permite iniciar sesión en la sucursal aunque el corporativo no responda |
+| Resúmenes para estadísticas | ✔ | — | — | El corporativo consulta las estadísticas por sucursal o consolidadas sin cargar a las sucursales |
+
+### 4. Replicación
+
+| Qué | Tipo | Publicador | Suscriptores | Por qué |
+|-----|------|------------|--------------|---------|
+| Catálogo de productos | **Merge** | Corporativo | San José, Limón | Se modifica desde cualquier nodo; merge sincroniza en ambos sentidos y detecta los conflictos (ver concurrencia) |
+| Clientes, proveedores y personas (públicos) y usuarios | **Transaccional** | Corporativo | San José, Limón | Solo cambian en el corporativo; la transaccional los envía casi en tiempo real |
+| Listas de referencia | **Snapshot** (o quedan de la restauración) | Corporativo | San José, Limón | Casi no cambian |
+
+El corporativo es también el **distribuidor**. Si una sucursal no responde, sus cambios esperan en cola y se sincronizan cuando vuelve.
+
+**Concurrencia:** si dos sucursales modifican el mismo producto antes de sincronizar, **gana el cambio más reciente**. Se usa el resolvedor de merge *DATETIME (Later Wins)* sobre una columna `LastEditedWhen` que los procedimientos de productos actualizan en cada cambio. El cambio que pierde queda registrado en el visor de conflictos de la replicación. Se eligió así porque ninguna sucursal tiene más autoridad que otra sobre el catálogo, y "gana el último" es la regla más fácil de explicar y de mostrar en la revisión.
+
+Dentro de un mismo nodo, los procedimientos de productos usan transacciones y comparan una columna `rowversion` antes de guardar. Si otro usuario cambió el producto mientras tanto, el procedimiento rechaza el cambio y pide volver a cargarlo, en vez de pisarlo.
+
+**Estadísticas consolidadas:** las vistas indexadas no pueden leer de otro servidor, así que el corporativo guarda **tablas de resumen** con una columna `Sucursal`. Un job del SQL Server Agent las llena desde las sucursales por linked server. Los procedimientos de estadísticas reciben el parámetro `Sucursal` (San José, Limón o consolidado).
+
+### 5. Nombres
+
+| Elemento | Nombre |
+|----------|--------|
+| Bases | `WWI_Corporativo`, `WWI_SanJose`, `WWI_Limon` |
+| Servidores (contenedores) | `corporativo`, `sanjose`, `limon` |
+| Linked servers en el corporativo | `LS_SANJOSE`, `LS_LIMON` |
+| Columna de sucursal en los resúmenes | `Sucursal` con los valores `SJ` y `LI` |
+| Tabla de usuarios (corporativo) | `Seguridad.Usuarios` |
+| Usuarios de base de datos para la API | `app_admin_sj`, `app_admin_li`, `app_corporativo` |
+
+### 6. Riesgos a revisar en los bloques siguientes
+
+- `StockItems`, `Customers`, `Suppliers` y `People` son **tablas temporales** (tienen historial con `ValidFrom` y `ValidTo`). La replicación no las acepta así, así que hay que desactivar el historial antes de publicarlas.
+- Las columnas sensibles se borran de las tablas en las sucursales. Los procedimientos del Proyecto 1 que las leen (detalle de cliente y de proveedor, mapa) tendrán que traerlas del corporativo por linked server.
+- La tabla de usuarios se replica con la contraseña ya encriptada, así que la llave simétrica debe crearse igual en los tres nodos (mismo `KEY_SOURCE` e `IDENTITY_VALUE`).
+
+### 7. Roles
+
+El enunciado define dos roles. Cada usuario tiene un rol y, si es administrador, una sucursal.
+
+| Rol | Nodo al que se conecta | Clientes y proveedores | Productos | Ventas | Estadísticas |
+|-----|------------------------|------------------------|-----------|--------|--------------|
+| **Administrador** | Su sucursal | Consultar | Consultar, crear, modificar y eliminar | Consultar y crear (las de su sucursal) | — |
+| **Corporativo** | Corporativo | Consultar, crear, modificar y eliminar | Consultar | — | Consultar (por sucursal o consolidado) |
+
+- La gestión de clientes y proveedores del Proyecto 1 se mantiene, pero en el corporativo: ahí están sus datos sensibles y es el maestro que los replica a las sucursales.
+- Crear ventas se mantiene para el administrador, porque cada sucursal maneja su propia facturación.
+- Cada rol usa un usuario de base de datos distinto (`app_admin_sj`, `app_admin_li`, `app_corporativo`) que solo tiene permiso de `EXECUTE` sobre los procedimientos de su rol. Así, aunque la web tuviera un error, la base no deja hacer lo que el rol no permite.
+
+### 8. Decisiones tomadas
+
+1. Vendedores repartidos 5 y 5 como en la sección 2.1.
+2. Compras por sucursal (justificado en la sección 2.1).
+3. En un conflicto de productos gana el cambio más reciente (sección 4).
+4. Dos roles, Administrador y Corporativo, con los permisos de la sección 7.
 
 ---
 
