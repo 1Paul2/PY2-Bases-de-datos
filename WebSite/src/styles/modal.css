@@ -1,0 +1,196 @@
+/* =========================================================
+   MODAL / OVERLAY
+   ========================================================= */
+
+.fondo {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 100;
+  animation: fadeInOverlay 0.2s ease;
+}
+
+@keyframes fadeInOverlay {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.ventana {
+  background: #ffffff;
+  color: #0f172a;
+  border-radius: 16px;
+  padding: 28px clamp(20px, 3vw, 36px);
+  width: min(900px, 100%);
+  max-height: 88vh;
+  overflow-y: auto;
+  box-shadow:
+    0 30px 60px -20px rgba(15, 23, 42, 0.35),
+    0 12px 24px -12px rgba(15, 23, 42, 0.20);
+  animation: slideUpModal 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+}
+
+@keyframes slideUpModal {
+  from { opacity: 0; transform: translateY(24px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.ventana > h2 {
+  margin: 0 0 20px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(53, 104, 89, 0.15);
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.ventana > h2:not(:first-of-type) {
+  margin-top: 28px;
+}
+
+/* Botón cerrar (esquina superior derecha) */
+.ventana .btn-cerrar {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  color: #64748b;
+  font-size: 1rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.18s ease;
+}
+
+.ventana .btn-cerrar:hover {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #b91c1c;
+  transform: rotate(90deg);
+}
+
+/* Detalle (dl) */
+.ventana dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px 24px;
+  margin: 0 0 8px;
+}
+
+.ventana dl > div {
+  padding: 10px 14px;
+  background: #f8fafc;
+  border-radius: 9px;
+  border-left: 3px solid var(--verde-principal, #356859);
+}
+
+.ventana dt {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #64748b;
+  margin-bottom: 3px;
+}
+
+.ventana dd {
+  margin: 0;
+  font-size: 0.92rem;
+  color: #0f172a;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+@media (max-width: 640px) {
+  .ventana {
+    padding: 22px 18px;
+    border-radius: 12px;
+  }
+}
+/* ---------- Confirmar eliminación ---------- */
+.ventana.ventana-confirmar {
+  width: min(420px, 100%);
+  padding: 32px 28px 24px;
+  text-align: center;
+}
+
+.confirmar-icono {
+  width: 60px;
+  height: 60px;
+  margin: 0 auto 16px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fef2f2;
+  color: #dc2626;
+  box-shadow: 0 0 0 8px #fff5f5;
+  animation: sacudirIcono 0.5s ease 0.15s;
+}
+
+@keyframes sacudirIcono {
+  0%, 100% { transform: rotate(0); }
+  25% { transform: rotate(-10deg); }
+  50% { transform: rotate(8deg); }
+  75% { transform: rotate(-4deg); }
+}
+
+.ventana-confirmar h3 {
+  margin: 0 0 8px;
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.ventana-confirmar p {
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  color: #475569;
+}
+
+.ventana-confirmar strong {
+  color: #0f172a;
+  word-break: break-word;
+}
+
+.ventana-confirmar .confirmar-error {
+  margin-top: 16px;
+  text-align: left;
+}
+
+.confirmar-acciones {
+  display: flex;
+  gap: 10px;
+  margin-top: 24px;
+}
+
+.confirmar-acciones .btn {
+  flex: 1;
+  justify-content: center;
+}
+
+.btn-eliminar {
+  background: #dc2626;
+  color: #ffffff;
+  box-shadow: 0 4px 12px -4px rgba(220, 38, 38, 0.5);
+}
+.btn-eliminar:hover:not(:disabled) {
+  background: #b91c1c;
+  box-shadow: 0 8px 20px -6px rgba(220, 38, 38, 0.55);
+}
+
+@media (max-width: 420px) {
+  .confirmar-acciones { flex-direction: column-reverse; }
+}
