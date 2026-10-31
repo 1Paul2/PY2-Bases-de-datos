@@ -252,6 +252,26 @@ El enunciado define dos roles. Cada usuario tiene un rol y, si es administrador,
 
 ## Instalación y ejecución
 
+### Nodos del Proyecto 2 (Docker)
+
+Cada nodo es un contenedor con una tecnología distinta:
+
+| Nodo | Puerto | Sistema operativo | Motor |
+|------|-------:|-------------------|-------|
+| `corporativo` | 1441 | Ubuntu 22.04 | SQL Server 2022 |
+| `sanjose` | 1442 | Red Hat Enterprise Linux 9 | SQL Server 2022 |
+| `limon` | 1443 | Ubuntu 20.04 | SQL Server 2019 |
+
+1. Copiar `WideWorldImporters-Full.bak` a `Docker/backup/`.
+2. Crear `Docker/.env` a partir de `Docker/.env.example` con la clave de `sa`.
+3. Con Docker Desktop abierto, desde la carpeta `Docker`:
+
+```powershell
+.\levantar.ps1
+```
+
+El script levanta los tres contenedores, restaura la base en cada uno (`WWI_Corporativo`, `WWI_SanJose`, `WWI_Limon`), crea los linked servers (`Script/distribuido/01_linked_servers.sql`) y configura el corporativo como distribuidor de la replicación (`Script/distribuido/02_distribuidor.sql`). Se puede correr de nuevo sin perder datos. Docker necesita unos 6 GB de memoria libres para los tres nodos.
+
 ### Requisitos
 
 - SQL Server 2019 o superior

@@ -1,0 +1,65 @@
+# Infraestructura distribuida del Proyecto 2: un contenedor SQL Server por nodo.
+# Cada sucursal usa otra tecnología (sistema operativo y versión del motor).
+# El hostname de cada contenedor es el nombre del servidor (@@SERVERNAME), necesario para la replicación.
+name: pry2-bases-2
+
+x-sqlserver: &sqlserver
+  restart: unless-stopped
+  networks: [wwi-net]
+  environment:
+    ACCEPT_EULA: "Y"
+    MSSQL_SA_PASSWORD: ${SA_PASSWORD}
+    MSSQL_PID: Developer
+    MSSQL_AGENT_ENABLED: "true"
+    MSSQL_MEMORY_LIMIT_MB: "2048"
+  healthcheck:
+    # La ruta de sqlcmd cambia entre versiones (mssql-tools18 en 2022, mssql-tools en algunas de 2019)
+    test: ["CMD-SHELL", "for s in /opt/mssql-tools18/bin/sqlcmd /opt/mssql-tools/bin/sqlcmd; do [ -x $$s ] && exec $$s -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -Q \"SELECT 1\" -b -o /dev/null; done; exit 1"]
+    interval: 10s
+    timeout: 5s
+    retries: 12
+    start_period: 30s
+
+services:
+  # Oficina corporativa (Plaza Roble, Escazú) — Ubuntu 22.04 + SQL Server 2022
+  # Datos sensibles, maestro de catálogos, distribuidor de la replicación y estadísticas
+  corporativo:
+    <<: *sqlserver
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: corporativo
+    hostname: corporativo
+    ports: ["1441:1433"]
+    volumes:
+      - corporativo-data:/var/opt/mssql
+      - ./backup:/var/opt/mssql/backup:ro
+
+  # Sucursal San José — Red Hat Enterprise Linux 9 + SQL Server 2022
+  sanjose:
+    <<: *sqlserver
+    image: mcr.microsoft.com/mssql/rhel/server:2022-latest
+    container_name: sanjose
+    hostname: sanjose
+    ports: ["1442:1433"]
+    volumes:
+      - sanjose-data:/var/opt/mssql
+      - ./backup:/var/opt/mssql/backup:ro
+
+  # Sucursal Limón — Ubuntu 20.04 + SQL Server 2019
+  limon:
+    <<: *sqlserver
+    image: mcr.microsoft.com/mssql/server:2019-latest
+    container_name: limon
+    hostname: limon
+    ports: ["1443:1433"]
+    volumes:
+      - limon-data:/var/opt/mssql
+      - ./backup:/var/opt/mssql/backup:ro
+
+networks:
+  wwi-net:
+    name: wwi-net
+
+volumes:
+  corporativo-data:
+  sanjose-data:
+  limon-data:
