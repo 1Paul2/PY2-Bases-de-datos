@@ -2,6 +2,8 @@
 
 $password = (Get-Content .env | Where-Object { $_ -match '^SA_PASSWORD=' }) -replace '^SA_PASSWORD=', ''
 if (-not $password) { throw 'Falta SA_PASSWORD en Docker\.env' }
+$enlace = (Get-Content .env | Where-Object { $_ -match '^ENLACE_PASSWORD=' }) -replace '^ENLACE_PASSWORD=', ''
+if (-not $enlace) { throw 'Falta ENLACE_PASSWORD en Docker\.env' }
 if (-not (Test-Path backup\WideWorldImporters-Full.bak)) { throw 'Falta backup\WideWorldImporters-Full.bak' }
 
 $nodos = [ordered]@{ corporativo = 'WWI_Corporativo'; sanjose = 'WWI_SanJose'; limon = 'WWI_Limon' }
@@ -32,13 +34,20 @@ foreach ($nodo in $nodos.Keys) {
 }
 
 foreach ($nodo in $nodos.Keys) {
+    Write-Host "== $nodo : login wwi_enlace" -ForegroundColor Cyan
+    docker cp ..\Script\distribuido\00_login_enlace.sql "${nodo}:/tmp/00_login_enlace.sql"
+    Invoke-Sql $nodo @('-v', "BASE=$($nodos[$nodo])", "ENLACE_PASSWORD=$enlace", '-i', '/tmp/00_login_enlace.sql')
+}
+
+foreach ($nodo in $nodos.Keys) {
     Write-Host "== $nodo : linked servers" -ForegroundColor Cyan
     docker cp ..\Script\distribuido\01_linked_servers.sql "${nodo}:/tmp/01_linked_servers.sql"
-    Invoke-Sql $nodo @('-v', "NODO=$nodo", "SA_PASSWORD=$password", '-i', '/tmp/01_linked_servers.sql')
+    Invoke-Sql $nodo @('-v', "NODO=$nodo", "ENLACE_PASSWORD=$enlace", '-i', '/tmp/01_linked_servers.sql')
 }
 
 Write-Host '== corporativo : distribuidor de la replicacion' -ForegroundColor Cyan
 docker cp ..\Script\distribuido\02_distribuidor.sql corporativo:/tmp/02_distribuidor.sql
-Invoke-Sql corporativo @('-v', "SA_PASSWORD=$password", '-i', '/tmp/02_distribuidor.sql') | Select-String 'Distribuidor|publicador|distribuidor'
+Invoke-Sql corporativo @('-v', "SA_PASSWORD=$password", '-i', '/tmp/02_distribuidor.sql') | Select-String 'Distribuidor|publicador|distribuidor|Master key'
 
-Write-Host '== Listo' -ForegroundColor Green
+Write-Host '== Verificacion' -ForegroundColor Green
+& "$PSScriptRoot\verificar.ps1"

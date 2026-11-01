@@ -10,6 +10,12 @@ END
 ELSE
     PRINT 'El distribuidor ya existe';
 
+IF NOT EXISTS (SELECT 1 FROM distribution.sys.symmetric_keys WHERE name = N'##MS_DatabaseMasterKey##')
+BEGIN
+    EXEC (N'USE distribution; CREATE MASTER KEY ENCRYPTION BY PASSWORD = ''$(SA_PASSWORD)'';');
+    PRINT 'Master key creada en distribution';
+END
+
 IF NOT EXISTS (SELECT 1 FROM msdb.dbo.MSdistpublishers WHERE name = @@SERVERNAME)
 BEGIN
     DECLARE @publicador sysname = @@SERVERNAME;
