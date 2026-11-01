@@ -1,7 +1,3 @@
--- Linked servers entre los nodos.
--- Se ejecuta con sqlcmd en cada nodo, pasando el nodo y la clave de sa:
---   sqlcmd ... -v NODO=corporativo SA_PASSWORD=<clave> -i 01_linked_servers.sql
--- En el corporativo crea LS_SANJOSE y LS_LIMON; en cada sucursal crea LS_CORPORATIVO.
 SET NOCOUNT ON;
 
 DECLARE @nodo sysname = N'$(NODO)';
@@ -35,8 +31,7 @@ BEGIN
         @locallogin = NULL,
         @rmtuser = N'sa',
         @rmtpassword = @clave;
-
-    -- RPC para ejecutar procedimientos remotos; sin promoción a transacción distribuida (no hay MSDTC)
+        
     EXEC sp_serveroption @nombre, 'rpc', 'true';
     EXEC sp_serveroption @nombre, 'rpc out', 'true';
     EXEC sp_serveroption @nombre, 'remote proc transaction promotion', 'false';

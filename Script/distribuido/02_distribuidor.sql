@@ -1,7 +1,3 @@
--- Configura el corporativo como distribuidor de la replicación (y como su propio publicador).
--- Solo se ejecuta en el corporativo:
---   sqlcmd ... -v SA_PASSWORD=<clave> -i 02_distribuidor.sql
--- Requiere la carpeta /var/opt/mssql/repldata (la crea Docker\levantar.ps1).
 SET NOCOUNT ON;
 
 IF NOT EXISTS (SELECT 1 FROM sys.servers WHERE name = N'repl_distributor')

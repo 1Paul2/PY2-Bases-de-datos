@@ -1,10 +1,4 @@
-﻿# Levanta los 3 nodos, restaura WideWorldImporters en cada uno como WWI_<Nodo> y crea los linked servers.
-# Uso, desde la carpeta Docker: .\levantar.ps1
-# Requiere backup\WideWorldImporters-Full.bak y el archivo .env con SA_PASSWORD (plantilla en .env.example).
-
-# 'Continue' porque docker escribe su progreso en stderr; los errores se revisan con $LASTEXITCODE
-$ErrorActionPreference = 'Continue'
-Set-Location $PSScriptRoot
+﻿Set-Location $PSScriptRoot
 
 $password = (Get-Content .env | Where-Object { $_ -match '^SA_PASSWORD=' }) -replace '^SA_PASSWORD=', ''
 if (-not $password) { throw 'Falta SA_PASSWORD en Docker\.env' }
@@ -12,7 +6,6 @@ if (-not (Test-Path backup\WideWorldImporters-Full.bak)) { throw 'Falta backup\W
 
 $nodos = [ordered]@{ corporativo = 'WWI_Corporativo'; sanjose = 'WWI_SanJose'; limon = 'WWI_Limon' }
 
-# sqlcmd está en una ruta distinta según la versión de la imagen
 function Invoke-Sql($nodo, [string[]]$sqlArgs) {
     $ruta = docker exec $nodo bash -c 'ls /opt/mssql-tools18/bin/sqlcmd /opt/mssql-tools/bin/sqlcmd 2>/dev/null | head -1'
     docker exec $nodo $ruta -S localhost -U sa -P $password -C -b @sqlArgs
@@ -23,7 +16,6 @@ Write-Host '== Levantando contenedores' -ForegroundColor Cyan
 docker compose up -d --wait
 if ($LASTEXITCODE -ne 0) { throw 'docker compose up fallo' }
 
-# Carpeta de snapshots de la replicación (el corporativo es el distribuidor)
 docker exec -u root corporativo bash -c 'mkdir -p /var/opt/mssql/repldata && chown mssql /var/opt/mssql/repldata'
 
 foreach ($nodo in $nodos.Keys) {
