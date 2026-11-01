@@ -263,14 +263,35 @@ Cada nodo es un contenedor con una tecnología distinta:
 | `limon` | 1443 | Ubuntu 20.04 | SQL Server 2019 |
 
 1. Copiar `WideWorldImporters-Full.bak` a `Docker/backup/`.
-2. Crear `Docker/.env` a partir de `Docker/.env.example` con la clave de `sa`.
+2. Crear `Docker/.env` a partir de `Docker/.env.example` con la clave de `sa` (`SA_PASSWORD`) y la del login de enlace (`ENLACE_PASSWORD`). Ambas deben tener mayúsculas, minúsculas y números, y al menos 8 caracteres.
 3. Con Docker Desktop abierto, desde la carpeta `Docker`:
 
 ```powershell
 .\levantar.ps1
 ```
 
-El script levanta los tres contenedores, restaura la base en cada uno (`WWI_Corporativo`, `WWI_SanJose`, `WWI_Limon`), crea los linked servers (`Script/distribuido/01_linked_servers.sql`) y configura el corporativo como distribuidor de la replicación (`Script/distribuido/02_distribuidor.sql`). Se puede correr de nuevo sin perder datos. Docker necesita unos 6 GB de memoria libres para los tres nodos.
+El script hace, en orden:
+
+| Paso | Script | Qué hace |
+|------|--------|----------|
+| 1 | `docker-compose.yml` | Levanta los tres contenedores con SQL Server Agent activo y la zona horaria de Costa Rica |
+| 2 | — | Restaura la base en cada nodo (`WWI_Corporativo`, `WWI_SanJose`, `WWI_Limon`) |
+| 3 | `Script/distribuido/00_login_enlace.sql` | Crea el login `wwi_enlace` en cada nodo, sin permisos de administrador: solo lee, escribe y ejecuta procedimientos en su base. Desactiva la política de seguridad por filas de ejemplo de WWI, que ocultaba los clientes a todo usuario que no fuera dueño de la base |
+| 4 | `Script/distribuido/01_linked_servers.sql` | Crea los linked servers (`LS_SANJOSE` y `LS_LIMON` en el corporativo, `LS_CORPORATIVO` en cada sucursal), que se conectan como `wwi_enlace`. Tienen tiempo de espera de 5 s para conectar y 30 s por consulta, para que un nodo caído responda con error en vez de bloquear |
+| 5 | `Script/distribuido/02_distribuidor.sql` | Configura el corporativo como distribuidor de la replicación, con la master key en `distribution` que Microsoft pide antes de replicar |
+| 6 | `verificar.ps1` | Muestra el estado de cada nodo |
+
+Se puede correr de nuevo sin perder datos. Docker necesita unos 6 GB de memoria libres para los tres nodos.
+
+#### Comandos útiles
+
+| Para | Comando (desde `Docker`) |
+|------|--------------------------|
+| Ver el estado del sistema distribuido (sistema operativo, motor, Agent, bases y si los linked servers responden) | `.\verificar.ps1` |
+| Simular la caída de una sucursal | `docker stop limon` y luego `.\verificar.ps1`: el corporativo muestra `LS_LIMON : NO RESPONDE` en unos 8 s |
+| Volver a encenderla | `docker start limon` |
+| Apagar los tres nodos sin perder datos | `docker compose stop` |
+| Empezar desde cero (borra las bases) | `docker compose down -v` y luego `.\levantar.ps1` |
 
 ### Requisitos
 
