@@ -288,7 +288,7 @@ Se puede correr de nuevo sin perder datos. Docker necesita unos 6 GB de memoria 
 | Para | Comando (desde `Docker`) |
 |------|--------------------------|
 | Ver el estado del sistema distribuido (sistema operativo, motor, Agent, bases y si los linked servers responden) | `.\verificar.ps1` |
-| Simular la caída de una sucursal | `docker stop limon` y luego `.\verificar.ps1`: el corporativo muestra `LS_LIMON : NO RESPONDE` en unos 8 s |
+| Simular la caída de una sucursal | `docker stop limon` y luego `.\verificar.ps1`: el corporativo muestra `LS_LIMON : NO RESPONDE` en unos 8 a 12 s |
 | Volver a encenderla | `docker start limon` |
 | Apagar los tres nodos sin perder datos | `docker compose stop` |
 | Empezar desde cero (borra las bases) | `docker compose down -v` y luego `.\levantar.ps1` |
