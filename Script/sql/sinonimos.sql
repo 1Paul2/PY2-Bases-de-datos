@@ -1,6 +1,3 @@
-USE WideWorldImporters;
-GO
-
 -- Purchasing
 DROP SYNONYM IF EXISTS Syn_Suppliers;
 CREATE SYNONYM Syn_Suppliers FOR Purchasing.Suppliers;

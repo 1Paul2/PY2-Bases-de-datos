@@ -1,23 +1,18 @@
-USE WideWorldImporters;
-GO
-
 -- #5
 
 
 CREATE OR ALTER PROCEDURE sp_top5_proveedores_ordenes
     @anioInicio INT = NULL,  
     @anioFin INT = NULL,
-    @Pagina INT = NULL,       -- página a consultar (NULL = todas)
-    @PorPagina INT = NULL     -- registros por página (NULL = todos)
+    @Pagina INT = NULL,
+    @PorPagina INT = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
 
-    -- Si no se indican, se usa el rango completo de la base
     IF @anioInicio IS NULL SELECT @anioInicio = MIN(YEAR(OrderDate)) FROM Syn_PurchaseOrders;
     IF @anioFin    IS NULL SELECT @anioFin    = MAX(YEAR(OrderDate)) FROM Syn_PurchaseOrders;
 
-    -- Validar que los años existan en la base de datos
     IF NOT EXISTS (SELECT 1 FROM Syn_PurchaseOrders WHERE YEAR(OrderDate) = @anioInicio)
         THROW 50001, 'El año de inicio no existe en la base de datos.', 1;
 

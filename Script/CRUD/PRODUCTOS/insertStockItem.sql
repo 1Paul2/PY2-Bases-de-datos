@@ -1,13 +1,3 @@
-USE WideWorldImporters;
-GO
-
-/*
-  Crea un producto y guarda TODO lo que se captura en el formulario:
-    - Warehouse.StockItems            (datos del producto)
-    - Warehouse.StockItemHoldings     (cantidad disponible y ubicación)
-    - Warehouse.StockItemStockGroups  (grupos/categorías del producto)
-  @StockGroups llega como texto con los IDs separados por coma: '1,4,7'
-*/
 CREATE OR ALTER PROCEDURE SP_InsertStockItem
     @StockItemName NVARCHAR(100),
     @SupplierID INT,
@@ -33,7 +23,6 @@ BEGIN
     SET NOCOUNT ON;
     SET XACT_ABORT ON;
 
-    -- Quién hizo el cambio lo decide la base: si no viene, se usa la persona PagWeb (usuario de la página web)
     SET @LastEditedBy = ISNULL(@LastEditedBy, dbo.FN_EditorWeb());
 
     IF NOT EXISTS (SELECT 1 FROM Syn_Suppliers WHERE SupplierID = @SupplierID)
@@ -45,12 +34,11 @@ BEGIN
     IF ISNULL(@QuantityOnHand, 0) < 0
         THROW 50022, 'La cantidad disponible no puede ser negativa.', 1;
 
-    -- Grupos elegidos (sin repetidos ni vacíos)
     DECLARE @Grupos TABLE (StockGroupID INT PRIMARY KEY);
     INSERT INTO @Grupos (StockGroupID)
     SELECT DISTINCT TRY_CAST(LTRIM(RTRIM(value)) AS INT)
     FROM STRING_SPLIT(ISNULL(@StockGroups, ''), ',')
-    WHERE LTRIM(RTRIM(value)) <> ''   -- '' se convertiría en 0
+    WHERE LTRIM(RTRIM(value)) <> ''
       AND TRY_CAST(LTRIM(RTRIM(value)) AS INT) IS NOT NULL;
 
     IF EXISTS (SELECT 1 FROM @Grupos G WHERE NOT EXISTS (SELECT 1 FROM Syn_StockGroups SG WHERE SG.StockGroupID = G.StockGroupID))
@@ -94,7 +82,6 @@ BEGIN
             0, 0, @LastEditedBy
         );
 
-        -- StockItemStockGroupID toma su valor por defecto de la secuencia
         INSERT INTO Syn_StockItemStockGroups (StockItemID, StockGroupID, LastEditedBy)
         SELECT @NewStockItemID, StockGroupID, @LastEditedBy
         FROM @Grupos;

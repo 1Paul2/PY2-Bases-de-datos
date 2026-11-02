@@ -1,5 +1,3 @@
-USE WideWorldImporters;
-GO
 SET NOCOUNT ON;
 GO
 
@@ -187,7 +185,7 @@ DECLARE @NuevaVenta TABLE (NewInvoiceID INT);
 DECLARE @IdVenta INT, @Contacto INT, @Vendedor INT;
 
 -- Datos que necesita la venta: la persona de contacto del cliente 1 y la vendedora 2.
-SELECT TOP 1 @Contacto = PrimaryContactPersonID FROM Syn_Customers WHERE CustomerID = 1;
+SELECT TOP 1 @Contacto = PrimaryContactPersonID FROM Syn_CustomersSensible WHERE CustomerID = 1;
 SET @Vendedor = 2;
 
 -- Crear una venta con dos productos.

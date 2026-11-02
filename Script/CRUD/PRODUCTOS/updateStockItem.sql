@@ -1,11 +1,3 @@
-USE WideWorldImporters;
-GO
-
-/*
-  Actualiza el producto, su inventario (cantidad y ubicación) y sus grupos.
-  Si @StockGroups viene NULL los grupos no se tocan; si viene con IDs se reemplazan.
-  Si @QuantityOnHand viene NULL la cantidad disponible no se cambia.
-*/
 CREATE OR ALTER PROCEDURE SP_UpdateStockItem
     @StockItemID INT,
     @StockItemName NVARCHAR(100),
@@ -31,8 +23,6 @@ AS
 BEGIN
     SET NOCOUNT ON;
     SET XACT_ABORT ON;
-
-    -- Quién hizo el cambio lo decide la base: si no viene, se usa la persona PagWeb (usuario de la página web)
     SET @LastEditedBy = ISNULL(@LastEditedBy, dbo.FN_EditorWeb());
 
     IF NOT EXISTS (SELECT 1 FROM Syn_StockItems WHERE StockItemID = @StockItemID)
@@ -51,7 +41,7 @@ BEGIN
     INSERT INTO @Grupos (StockGroupID)
     SELECT DISTINCT TRY_CAST(LTRIM(RTRIM(value)) AS INT)
     FROM STRING_SPLIT(ISNULL(@StockGroups, ''), ',')
-    WHERE LTRIM(RTRIM(value)) <> ''   -- '' se convertiría en 0
+    WHERE LTRIM(RTRIM(value)) <> ''
       AND TRY_CAST(LTRIM(RTRIM(value)) AS INT) IS NOT NULL;
 
     IF EXISTS (SELECT 1 FROM @Grupos G WHERE NOT EXISTS (SELECT 1 FROM Syn_StockGroups SG WHERE SG.StockGroupID = G.StockGroupID))

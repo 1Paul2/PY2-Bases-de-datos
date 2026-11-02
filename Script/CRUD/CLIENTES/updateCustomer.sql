@@ -1,5 +1,3 @@
-USE WideWorldImporters;
-GO
 CREATE OR ALTER PROCEDURE SP_UpdateCustomer
     @CustomerID INT,
     @CustomerName NVARCHAR(100),
@@ -7,7 +5,7 @@ CREATE OR ALTER PROCEDURE SP_UpdateCustomer
     @BuyingGroupID INT = NULL,
     @PrimaryContactPersonID INT = NULL,
     @AlternateContactPersonID INT = NULL,
-    @PrimaryContactName NVARCHAR(50) = NULL,     -- nombre de un contacto nuevo
+    @PrimaryContactName NVARCHAR(50) = NULL,
     @AlternateContactName NVARCHAR(50) = NULL,
     @BillToCustomerID INT = NULL,
     @DeliveryMethodID INT,
@@ -18,7 +16,7 @@ CREATE OR ALTER PROCEDURE SP_UpdateCustomer
     @PhoneNumber NVARCHAR(20),
     @FaxNumber NVARCHAR(20),
     @PaymentDays INT,
-    @StandardDiscountPercentage DECIMAL(18, 3) = NULL,   -- valores por defecto los pone la base
+    @StandardDiscountPercentage DECIMAL(18, 3) = NULL,
     @IsStatementSent BIT = NULL,
     @IsOnCreditHold BIT = NULL,
     @WebsiteURL NVARCHAR(100),
@@ -35,6 +33,9 @@ BEGIN
     SET NOCOUNT ON;
     SET XACT_ABORT ON;
 
+    IF OBJECT_ID(N'Sales.CustomersSensible') IS NULL
+        THROW 50090, 'Los clientes solo se crean, editan o eliminan en el corporativo.', 1;
+
     SET @LastEditedBy = ISNULL(@LastEditedBy, dbo.FN_EditorWeb());
 
     IF (@DeliveryLatitude IS NULL AND @DeliveryLongitude IS NOT NULL)
@@ -50,7 +51,6 @@ BEGIN
     BEGIN TRY
         BEGIN TRANSACTION;
 
-        -- Contactos: si no se eligió una persona existente pero se escribió un nombre, se crea en Application.People
         EXEC SP_ObtenerOCrearPersona @PrimaryContactName, @LastEditedBy, @PrimaryContactPersonID OUTPUT;
         EXEC SP_ObtenerOCrearPersona @AlternateContactName, @LastEditedBy, @AlternateContactPersonID OUTPUT;
 
@@ -67,29 +67,31 @@ BEGIN
         SET CustomerName = @CustomerName,
             CustomerCategoryID = @CustomerCategoryID,
             BuyingGroupID = NULLIF(@BuyingGroupID, 0),
-            PrimaryContactPersonID = @PrimaryContactPersonID,
-            AlternateContactPersonID = NULLIF(@AlternateContactPersonID, 0),
-            -- BillToCustomerID y DeliveryCityID son NOT NULL: con 0 o NULL se conserva el valor actual
             BillToCustomerID = ISNULL(NULLIF(@BillToCustomerID, 0), BillToCustomerID),
             DeliveryMethodID = @DeliveryMethodID,
             DeliveryCityID = ISNULL(NULLIF(@DeliveryCityID, 0), DeliveryCityID),
             PostalCityID = @PostalCityID,
-            DeliveryPostalCode = @DeliveryPostalCode,
-            PostalPostalCode = @PostalPostalCode,
-            PhoneNumber = ISNULL(@PhoneNumber, ''),
-            FaxNumber = ISNULL(@FaxNumber, ''),
             PaymentDays = @PaymentDays,
             StandardDiscountPercentage = ISNULL(@StandardDiscountPercentage, StandardDiscountPercentage),
             IsStatementSent = ISNULL(@IsStatementSent, IsStatementSent),
             IsOnCreditHold = ISNULL(@IsOnCreditHold, IsOnCreditHold),
+            AccountOpenedDate = ISNULL(@AccountOpenedDate, AccountOpenedDate),
+            LastEditedBy = COALESCE(@LastEditedBy, dbo.FN_EditorWeb())
+        WHERE CustomerID = @CustomerID;
+
+        UPDATE Syn_CustomersSensibleDatos
+        SET PrimaryContactPersonID = @PrimaryContactPersonID,
+            AlternateContactPersonID = NULLIF(@AlternateContactPersonID, 0),
+            DeliveryPostalCode = @DeliveryPostalCode,
+            PostalPostalCode = @PostalPostalCode,
+            PhoneNumber = ISNULL(@PhoneNumber, ''),
+            FaxNumber = ISNULL(@FaxNumber, ''),
             WebsiteURL = ISNULL(@WebsiteURL, ''),
             DeliveryAddressLine1 = @DeliveryAddressLine1,
             DeliveryAddressLine2 = @DeliveryAddressLine2,
             PostalAddressLine1 = @PostalAddressLine1,
             PostalAddressLine2 = @PostalAddressLine2,
-            AccountOpenedDate = ISNULL(@AccountOpenedDate, AccountOpenedDate),
-            DeliveryLocation = CASE WHEN @DeliveryLatitude IS NULL AND @DeliveryLongitude IS NULL THEN NULL ELSE GEOGRAPHY::Point(@DeliveryLatitude, @DeliveryLongitude, 4326) END,
-            LastEditedBy = COALESCE(@LastEditedBy, dbo.FN_EditorWeb())
+            DeliveryLocation = CASE WHEN @DeliveryLatitude IS NULL AND @DeliveryLongitude IS NULL THEN NULL ELSE GEOGRAPHY::Point(@DeliveryLatitude, @DeliveryLongitude, 4326) END
         WHERE CustomerID = @CustomerID;
 
         COMMIT TRANSACTION;

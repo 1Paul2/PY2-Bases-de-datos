@@ -1,6 +1,3 @@
-USE WideWorldImporters;
-GO
-
 -- #10 
 
 CREATE OR ALTER PROCEDURE sp_metodo_envio_favorito
@@ -10,8 +7,8 @@ CREATE OR ALTER PROCEDURE sp_metodo_envio_favorito
     @catProducto VARCHAR(100) = NULL,  
     @producto VARCHAR(100) = NULL,  
     @soloFavorito BIT = 1,
-    @Pagina INT = NULL,       -- página a consultar (NULL = todas)
-    @PorPagina INT = NULL     -- registros por página (NULL = todos)
+    @Pagina INT = NULL,
+    @PorPagina INT = NULL
 AS
 BEGIN
     SET NOCOUNT ON;

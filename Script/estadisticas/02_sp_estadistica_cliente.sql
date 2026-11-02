@@ -1,13 +1,10 @@
-USE WideWorldImporters;
-GO
-
 -- #2
 
 CREATE OR ALTER PROCEDURE sp_estadistica_cliente
     @NomCliente VARCHAR(100) = '',
     @categoria VARCHAR(100) = '',
-    @Pagina INT = NULL,       -- página a consultar (NULL = todas)
-    @PorPagina INT = NULL     -- registros por página (NULL = todos)
+    @Pagina INT = NULL,
+    @PorPagina INT = NULL
 AS
 BEGIN
     SET NOCOUNT ON;

@@ -1,6 +1,3 @@
-USE WideWorldImporters;
-GO
-
 -- #9
 
 DROP SYNONYM IF EXISTS Syn_StockItemTransactions;
@@ -11,19 +8,17 @@ CREATE OR ALTER PROCEDURE sp_rotacion_inventario
     @anio INT = NULL,
     @categoria VARCHAR(100) = NULL,
     @proveedor VARCHAR(100) = NULL,
-    @Pagina INT = NULL,       -- página a consultar (NULL = todas)
-    @PorPagina INT = NULL     -- registros por página (NULL = todos)
+    @Pagina INT = NULL,
+    @PorPagina INT = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
 
-    -- Validar que el año exista en los movimientos de inventario
     IF @anio IS NOT NULL
        AND NOT EXISTS (SELECT 1 FROM Syn_StockItemTransactions
                        WHERE YEAR(TransactionOccurredWhen) = @anio)
         THROW 50001, 'El año indicado no existe en la base de datos.', 1;
 
-    -- Última fecha con datos
     DECLARE @ultima DATE;
     SELECT @ultima = MAX(CAST(TransactionOccurredWhen AS DATE))
     FROM Syn_StockItemTransactions;
@@ -54,12 +49,9 @@ BEGIN
     Movimiento AS (
         SELECT
             M.StockItemID, M.Anio, M.MovimientoNeto, M.UnidadesVendidas,
-            -- suma de los movimientos hasta el cierre de cada año
             SUM(M.MovimientoNeto) OVER (PARTITION BY M.StockItemID ORDER BY M.Anio
                                         ROWS UNBOUNDED PRECEDING) AS MovimientoAcumulado,
-            -- suma de todos los movimientos del producto
             SUM(M.MovimientoNeto) OVER (PARTITION BY M.StockItemID) AS MovimientoTotal,
-            -- existencia real actual del producto
             ISNULL(H.QuantityOnHand, 0) AS ExistenciaActual
         FROM MovimientosAnio M
         LEFT JOIN Syn_StockItemHoldings H ON H.StockItemID = M.StockItemID
@@ -74,10 +66,6 @@ BEGIN
     Inventario AS (
         SELECT
             A.StockItemID, A.Anio, A.UnidadesVendidas,
-            -- La base no trae saldo de apertura. Se parte de la existencia actual y se
-            -- retrocede con los movimientos; si los movimientos del producto no cuadran
-            -- con su existencia actual, el saldo inicial es el mínimo que evita
-            -- inventarios negativos (nunca menor que cero).
             B.SaldoInicial + A.MovimientoAcumulado AS InventarioFinal,
             B.SaldoInicial + A.MovimientoAcumulado - A.MovimientoNeto AS InventarioInicial
         FROM Acumulado A
@@ -99,7 +87,7 @@ BEGIN
                      CASE WHEN DATEFROMPARTS(I.Anio, 12, 31) > @ultima
                           THEN @ultima ELSE DATEFROMPARTS(I.Anio, 12, 31) END) + 1 AS DiasPeriodo
         FROM Inventario I
-        WHERE @anio IS NULL OR I.Anio = @anio    -- el filtro va después de los acumulados
+        WHERE @anio IS NULL OR I.Anio = @anio
     )
     SELECT
         COUNT(*) OVER () AS TotalRegistros,

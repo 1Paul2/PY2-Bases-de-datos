@@ -1,6 +1,3 @@
-USE WideWorldImporters;
-GO
-
 CREATE OR ALTER PROCEDURE SP_InsertSale
     @CustomerID INT,
     @DeliveryMethodID INT,
@@ -27,8 +24,6 @@ BEGIN
 
     BEGIN TRY
         BEGIN TRANSACTION;
-
-        -- PARSER: cada línea es StockItemID|Cantidad|PrecioUnitario|Impuesto|Descripcion, separadas por ;
         ;WITH Filas AS (
             SELECT LTRIM(RTRIM(value)) AS Fila
             FROM STRING_SPLIT(@Lines, ';')
@@ -57,8 +52,6 @@ BEGIN
             Description
         INTO #Lineas
         FROM Campos;
-
-        -- Si ninguna fila tuvo los 5 campos, el parser las descarta 
         IF NOT EXISTS (SELECT 1 FROM #Lineas)
             THROW 50014, 'Las líneas de factura no tienen un formato válido.', 1;
 
@@ -71,7 +64,6 @@ BEGIN
         IF EXISTS (SELECT 1 FROM #Lineas WHERE Quantity <= 0 OR UnitPrice < 0 OR TaxRate < 0)
             THROW 50016, 'Las cantidades deben ser mayores que cero y los precios e impuestos no pueden ser negativos.', 1;
 
-        -- Inventario: no se puede vender más de lo que hay disponible
         DECLARE @SinInventario NVARCHAR(2000);
         SELECT @SinInventario = STRING_AGG(CAST(SI.StockItemName AS NVARCHAR(MAX)) + ' (disponible: '
                    + CAST(CAST(ISNULL(SIH.QuantityOnHand, 0) AS INT) AS NVARCHAR(20)) + ')', '; ')
@@ -138,8 +130,6 @@ BEGIN
             SELECT CAST(ROUND(L.Quantity * L.UnitPrice * L.TaxRate / 100.0, 2) AS DECIMAL(18,2)) AS TaxAmount
         ) T;
 
-
-        -- Se descuenta el inventario y se registra el movimiento (Stock Issue), igual que en la base original
         UPDATE SIH
         SET SIH.QuantityOnHand = SIH.QuantityOnHand - L.Cantidad,
             SIH.LastEditedBy = @SalespersonPersonID,
@@ -157,7 +147,6 @@ BEGIN
             SELECT L.StockItemID, @TipoSalida, @CustomerID, @NewInvoiceID, SYSDATETIME(), -L.Cantidad, @SalespersonPersonID
             FROM (SELECT StockItemID, SUM(Quantity) AS Cantidad FROM #Lineas GROUP BY StockItemID) L;
 
-        -- Totales de artículos secos y refrigerados de la factura
         UPDATE I
         SET I.TotalDryItems = T.Secos,
             I.TotalChillerItems = T.Refrigerados

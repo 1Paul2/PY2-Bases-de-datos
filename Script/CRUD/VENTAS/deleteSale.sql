@@ -1,5 +1,3 @@
-use WideWorldImporters;
-GO
 CREATE OR ALTER PROCEDURE SP_DeleteSale
     @InvoiceID INT
 AS
@@ -13,7 +11,6 @@ BEGIN
         IF NOT EXISTS (SELECT 1 FROM Syn_Invoices WHERE InvoiceID = @InvoiceID)
             THROW 50001, 'La venta indicada no existe.', 1;
 
-        -- Se devuelve al inventario lo que tenía la factura y se borran sus movimientos
         UPDATE SIH
         SET SIH.QuantityOnHand = SIH.QuantityOnHand + IL.Cantidad,
             SIH.LastEditedWhen = SYSDATETIME()

@@ -1,6 +1,3 @@
-USE WideWorldImporters;
-GO
-
 -- #7
 
  CREATE OR ALTER PROCEDURE sp_seguimiento_compras_cliente
@@ -8,10 +5,10 @@ GO
     @mes INT = NULL,
     @categoria VARCHAR(100) = NULL,
     @cliente VARCHAR(100) = NULL,
-    @categoriaId INT = NULL,     -- grupo de producto (categoría)
-    @subcategoriaId INT = NULL,  -- segundo grupo del producto (subcategoría)
-    @Pagina INT = NULL,       -- página a consultar (NULL = todas)
-    @PorPagina INT = NULL     -- registros por página (NULL = todos)
+    @categoriaId INT = NULL,
+    @subcategoriaId INT = NULL,
+    @Pagina INT = NULL,
+    @PorPagina INT = NULL
 AS
 BEGIN
     SET NOCOUNT ON;

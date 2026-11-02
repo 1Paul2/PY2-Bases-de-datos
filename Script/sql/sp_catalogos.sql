@@ -1,12 +1,14 @@
-USE WideWorldImporters;
-GO
-
 -- Persona con la que se registran los cambios hechos desde la página web (LastEditedBy).
 -- Se crea una sola vez; los SPs la buscan por nombre.
-IF NOT EXISTS (SELECT 1 FROM Syn_People WHERE FullName = 'PagWeb')
-    INSERT INTO Syn_People (FullName, PreferredName, IsPermittedToLogon, IsExternalLogonProvider,
-                            IsSystemUser, IsEmployee, IsSalesperson, LastEditedBy)
-    VALUES ('PagWeb', 'PagWeb', 0, 0, 1, 1, 0, 1);
+IF OBJECT_ID(N'Application.PeopleSensible') IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM Syn_People WHERE FullName = 'PagWeb')
+BEGIN
+    DECLARE @PagWeb INT = NEXT VALUE FOR Sequences.PersonID;
+    INSERT INTO Syn_People (PersonID, FullName, PreferredName, IsEmployee, IsSalesperson, LastEditedBy)
+    VALUES (@PagWeb, 'PagWeb', 'PagWeb', 1, 0, 1);
+    INSERT INTO Syn_PeopleSensible (PersonID, IsPermittedToLogon, IsExternalLogonProvider, IsSystemUser)
+    VALUES (@PagWeb, 0, 0, 1);
+END
 GO
 
 CREATE OR ALTER FUNCTION FN_EditorWeb()
@@ -130,10 +132,11 @@ BEGIN
         C.CustomerID,
         C.CustomerName,
         C.DeliveryMethodID,
-        C.PrimaryContactPersonID,
+        S.PrimaryContactPersonID,
         P.FullName AS PrimaryContactName
     FROM Syn_Customers C
-    INNER JOIN Syn_People P ON P.PersonID = C.PrimaryContactPersonID
+    INNER JOIN Syn_CustomersSensible S ON S.CustomerID = C.CustomerID
+    INNER JOIN Syn_People P ON P.PersonID = S.PrimaryContactPersonID
     WHERE @Criterio IS NULL OR @Criterio = '' OR C.CustomerName LIKE '%' + @Criterio + '%'
     ORDER BY C.CustomerName;
 END;
@@ -276,8 +279,10 @@ BEGIN
 
     SET @PersonID = NEXT VALUE FOR Sequences.PersonID;
 
-    INSERT INTO Syn_People (PersonID, FullName, PreferredName, IsPermittedToLogon, IsExternalLogonProvider,
-                            IsSystemUser, IsEmployee, IsSalesperson, LastEditedBy)
-    VALUES (@PersonID, @Nombre, @Nombre, 0, 0, 0, 0, 0, ISNULL(@EditadoPor, dbo.FN_EditorWeb()));
+    INSERT INTO Syn_People (PersonID, FullName, PreferredName, IsEmployee, IsSalesperson, LastEditedBy)
+    VALUES (@PersonID, @Nombre, @Nombre, 0, 0, ISNULL(@EditadoPor, dbo.FN_EditorWeb()));
+
+    INSERT INTO Syn_PeopleSensible (PersonID, IsPermittedToLogon, IsExternalLogonProvider, IsSystemUser)
+    VALUES (@PersonID, 0, 0, 0);
 END;
 GO
