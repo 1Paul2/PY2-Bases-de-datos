@@ -1,7 +1,7 @@
 SET NOCOUNT ON;
 
 DECLARE @nodo sysname = N'$(NODO)';
-DECLARE @clave nvarchar(128) = N'$(SA_PASSWORD)';
+DECLARE @clave nvarchar(128) = N'$(ENLACE_PASSWORD)';
 DECLARE @destinos TABLE (nombre sysname, servidor sysname);
 
 IF @nodo = N'corporativo'
@@ -29,12 +29,14 @@ BEGIN
         @rmtsrvname = @nombre,
         @useself = 'FALSE',
         @locallogin = NULL,
-        @rmtuser = N'sa',
+        @rmtuser = N'wwi_enlace',
         @rmtpassword = @clave;
-        
+
     EXEC sp_serveroption @nombre, 'rpc', 'true';
     EXEC sp_serveroption @nombre, 'rpc out', 'true';
     EXEC sp_serveroption @nombre, 'remote proc transaction promotion', 'false';
+    EXEC sp_serveroption @nombre, 'connect timeout', '5';
+    EXEC sp_serveroption @nombre, 'query timeout', '30';
 
     PRINT CONCAT('Linked server ', @nombre, ' -> ', @servidor, ' creado');
     FETCH NEXT FROM c INTO @nombre, @servidor;

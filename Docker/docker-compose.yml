@@ -9,6 +9,7 @@ x-sqlserver: &sqlserver
     MSSQL_PID: Developer
     MSSQL_AGENT_ENABLED: "true"
     MSSQL_MEMORY_LIMIT_MB: "2048"
+    TZ: America/Costa_Rica
   healthcheck:
     test: ["CMD-SHELL", "for s in /opt/mssql-tools18/bin/sqlcmd /opt/mssql-tools/bin/sqlcmd; do [ -x $$s ] && exec $$s -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -Q \"SELECT 1\" -b -o /dev/null; done; exit 1"]
     interval: 10s
