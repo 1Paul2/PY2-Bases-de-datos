@@ -35,7 +35,6 @@ BEGIN
     EXEC sp_serveroption @nombre, 'rpc', 'true';
     EXEC sp_serveroption @nombre, 'rpc out', 'true';
     EXEC sp_serveroption @nombre, 'remote proc transaction promotion', 'false';
-    -- bloquear consulta si el server no responde en 5 s y aborta si la consulta tarda más de 30 s
     EXEC sp_serveroption @nombre, 'connect timeout', '5';
     EXEC sp_serveroption @nombre, 'query timeout', '30';
 

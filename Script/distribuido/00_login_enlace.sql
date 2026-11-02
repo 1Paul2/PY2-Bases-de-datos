@@ -18,7 +18,6 @@ IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N''wwi_enlace'
 ALTER ROLE db_datareader ADD MEMBER wwi_enlace;
 ALTER ROLE db_datawriter ADD MEMBER wwi_enlace;
 GRANT EXECUTE TO wwi_enlace;
--- Política de ejemplo de WWI que oculta los clientes a quien no sea db_owner
 IF EXISTS (SELECT 1 FROM sys.security_policies WHERE name = N''FilterCustomersBySalesTerritoryRole'' AND is_enabled = 1)
     ALTER SECURITY POLICY Application.FilterCustomersBySalesTerritoryRole WITH (STATE = OFF);';
 EXEC (@sql);
