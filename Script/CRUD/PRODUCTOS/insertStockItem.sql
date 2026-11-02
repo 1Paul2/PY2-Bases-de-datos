@@ -14,8 +14,14 @@ CREATE OR ALTER PROCEDURE SP_InsertStockItem
     @RecommendedRetailPrice DECIMAL(18, 2) = NULL,
     @TypicalWeightPerUnit DECIMAL(18, 3) = NULL,
     @MarketingComments NVARCHAR(MAX) = NULL,
+    @Barcode NVARCHAR(50) = NULL,
+    @InternalComments NVARCHAR(MAX) = NULL,
     @BinLocation NVARCHAR(20) = NULL,
     @QuantityOnHand INT = 0,
+    @LastStocktakeQuantity INT = NULL,
+    @LastCostPrice DECIMAL(18, 2) = NULL,
+    @ReorderLevel INT = NULL,
+    @TargetStockLevel INT = NULL,
     @StockGroups NVARCHAR(400) = NULL,
     @LastEditedBy INT = NULL
 AS
@@ -33,6 +39,10 @@ BEGIN
 
     IF ISNULL(@QuantityOnHand, 0) < 0
         THROW 50022, 'La cantidad disponible no puede ser negativa.', 1;
+
+    IF ISNULL(@LastStocktakeQuantity, 0) < 0 OR ISNULL(@LastCostPrice, 0) < 0
+       OR ISNULL(@ReorderLevel, 0) < 0 OR ISNULL(@TargetStockLevel, 0) < 0
+        THROW 50025, 'Los valores de inventario no pueden ser negativos.', 1;
 
     DECLARE @Grupos TABLE (StockGroupID INT PRIMARY KEY);
     INSERT INTO @Grupos (StockGroupID)
@@ -58,7 +68,7 @@ BEGIN
             UnitPackageID, OuterPackageID, QuantityPerOuter,
             Brand, Size, TaxRate, UnitPrice, IsChillerStock,
             RecommendedRetailPrice, TypicalWeightPerUnit, MarketingComments,
-            LastEditedBy
+            Barcode, InternalComments, LastEditedBy
         )
         VALUES
         (
@@ -66,7 +76,7 @@ BEGIN
             @UnitPackageID, @OuterPackageID, @QuantityPerOuter,
             @Brand, @Size, @TaxRate, @UnitPrice, @IsChillerStock,
             @RecommendedRetailPrice, ISNULL(@TypicalWeightPerUnit, 0), @MarketingComments,
-            @LastEditedBy
+            @Barcode, @InternalComments, @LastEditedBy
         );
 
         INSERT INTO Syn_StockItemHoldings
@@ -78,8 +88,8 @@ BEGIN
         VALUES
         (
             @NewStockItemID, ISNULL(@QuantityOnHand, 0), ISNULL(@BinLocation, ''),
-            ISNULL(@QuantityOnHand, 0), @UnitPrice,
-            0, 0, @LastEditedBy
+            ISNULL(@LastStocktakeQuantity, ISNULL(@QuantityOnHand, 0)), ISNULL(@LastCostPrice, @UnitPrice),
+            ISNULL(@ReorderLevel, 0), ISNULL(@TargetStockLevel, 0), @LastEditedBy
         );
 
         INSERT INTO Syn_StockItemStockGroups (StockItemID, StockGroupID, LastEditedBy)

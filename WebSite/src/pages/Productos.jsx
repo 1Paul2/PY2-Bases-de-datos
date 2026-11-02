@@ -33,7 +33,13 @@ const camposDetalle = [
   ['Días de entrega', 'LeadTimeDays'],
   ['Refrigerado', 'RefrigeradoTexto'],
   ['Cantidad disponible', 'QuantityOnHandTexto'],
-  ['Ubicación', 'BinLocationTexto']
+  ['Ubicación', 'BinLocationTexto'],
+  ['Código de barras', 'Barcode'],
+  ['Comentarios internos', 'InternalComments'],
+  ['Último conteo de inventario', 'LastStocktakeQuantity'],
+  ['Último costo', 'LastCostPrice'],
+  ['Nivel de reorden', 'ReorderLevel'],
+  ['Nivel de inventario objetivo', 'TargetStockLevel']
 ];
 
 // [etiqueta, columna que devuelve SP_GetSupplierDetails]
@@ -60,6 +66,7 @@ const FORMATOS = {
   TaxRate: v => `${Number(v)} %`,
   UnitPrice: dinero,
   RecommendedRetailPrice: dinero,
+  LastCostPrice: dinero,
   TypicalWeightPerUnit: v => `${Number(v)} kg`
 };
 
@@ -76,6 +83,8 @@ const formularioInicial = {
   OuterPackageID: '', QuantityPerOuter: 1, Brand: '', Size: '', TaxRate: 0, IsChillerStock: false,
   UnitPrice: '', RecommendedRetailPrice: '', TypicalWeightPerUnit: '',
   BinLocation: '', QuantityOnHand: 0, MarketingComments: '', StockGroups: [],
+  Barcode: '', InternalComments: '',
+  LastStocktakeQuantity: '', LastCostPrice: '', ReorderLevel: 0, TargetStockLevel: 0,
   // LastEditedBy no se envía: lo asigna el procedimiento almacenado
 };
 
@@ -177,6 +186,12 @@ export default function Productos() {
         BinLocation: datos.BinLocation ?? '',
         QuantityOnHand: datos.QuantityOnHand ?? 0,
         MarketingComments: datos.MarketingComments ?? '',
+        Barcode: datos.Barcode ?? '',
+        InternalComments: datos.InternalComments ?? '',
+        LastStocktakeQuantity: datos.LastStocktakeQuantity ?? '',
+        LastCostPrice: datos.LastCostPrice ?? '',
+        ReorderLevel: datos.ReorderLevel ?? 0,
+        TargetStockLevel: datos.TargetStockLevel ?? 0,
         StockGroups: datos.StockGroupIDs ? String(datos.StockGroupIDs).split(',').map(Number) : []
       });
       setError('');
@@ -441,8 +456,16 @@ export default function Productos() {
             <label>Peso típico<input name="TypicalWeightPerUnit" type="number" step="0.01" min="0" value={formulario.TypicalWeightPerUnit} onChange={cambiarFormulario} /></label>
             <label>Ubicación<input name="BinLocation" value={formulario.BinLocation} onChange={cambiarFormulario} /></label>
             <label>Cantidad disponible<input name="QuantityOnHand" type="number" min="0" step="1" value={formulario.QuantityOnHand} onChange={cambiarFormulario} required /></label>
+            <label>Código de barras<input name="Barcode" maxLength="50" value={formulario.Barcode} onChange={cambiarFormulario} /></label>
+            <label>Último conteo de inventario<input name="LastStocktakeQuantity" type="number" min="0" step="1" value={formulario.LastStocktakeQuantity} onChange={cambiarFormulario} placeholder="Vacío = cantidad disponible" /></label>
+            <label>Último costo<input name="LastCostPrice" type="number" min="0" step="0.01" value={formulario.LastCostPrice} onChange={cambiarFormulario} placeholder="Vacío = precio unitario" /></label>
+            <label>Nivel de reorden<input name="ReorderLevel" type="number" min="0" step="1" value={formulario.ReorderLevel} onChange={cambiarFormulario} required /></label>
+            <label>Nivel de inventario objetivo<input name="TargetStockLevel" type="number" min="0" step="1" value={formulario.TargetStockLevel} onChange={cambiarFormulario} required /></label>
             <label className="formulario-ancho">Comentarios de mercadeo
               <textarea name="MarketingComments" value={formulario.MarketingComments} onChange={cambiarFormulario} />
+            </label>
+            <label className="formulario-ancho">Comentarios internos
+              <textarea name="InternalComments" value={formulario.InternalComments} onChange={cambiarFormulario} />
             </label>
             <fieldset className="formulario-ancho">
               <legend>Grupos del producto (categoría y subcategorías)</legend>

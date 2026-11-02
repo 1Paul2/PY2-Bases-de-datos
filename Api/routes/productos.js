@@ -60,8 +60,14 @@ function parametrosProducto(request, body) {
     .input('RecommendedRetailPrice', sql.Decimal(18, 2), decimalOpcional(body.RecommendedRetailPrice))
     .input('TypicalWeightPerUnit', sql.Decimal(18, 3), decimalOpcional(body.TypicalWeightPerUnit))
     .input('MarketingComments', sql.NVarChar(sql.MAX), textoOpcional(body.MarketingComments))
+    .input('Barcode', sql.NVarChar(50), textoOpcional(body.Barcode))
+    .input('InternalComments', sql.NVarChar(sql.MAX), textoOpcional(body.InternalComments))
     .input('BinLocation', sql.NVarChar(20), textoOpcional(body.BinLocation))
     .input('QuantityOnHand', sql.Int, enteroNoNegativo(body.QuantityOnHand))
+    .input('LastStocktakeQuantity', sql.Int, enteroNoNegativo(body.LastStocktakeQuantity))
+    .input('LastCostPrice', sql.Decimal(18, 2), decimalOpcional(body.LastCostPrice))
+    .input('ReorderLevel', sql.Int, enteroNoNegativo(body.ReorderLevel))
+    .input('TargetStockLevel', sql.Int, enteroNoNegativo(body.TargetStockLevel))
     .input('StockGroups', sql.NVarChar(400), textoGrupos(body.StockGroups))
     .input('LastEditedBy', sql.Int, body.LastEditedBy ?? null);
 }
