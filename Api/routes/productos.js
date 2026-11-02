@@ -83,7 +83,7 @@ router.get('/grupos', async (req, res) => {
     const result = await pool.request().execute('SP_GetStockGroupsInUse');
     res.json({ total: result.recordset.length, data: result.recordset });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(estadoError(err)).json({ error: err.message });
   }
 });
 
@@ -105,7 +105,7 @@ router.get('/', async (req, res) => {
 
     res.json(respuestaPaginada(result.recordset, pagina, porPagina));
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(estadoError(err)).json({ error: err.message });
   }
 });
 
@@ -167,15 +167,23 @@ router.delete('/:id', async (req, res) => {
 
 // Detalle
 router.get('/:id', async (req, res) => {
+  const id = Number.parseInt(req.params.id, 10);
+  if (!Number.isInteger(id) || id <= 0) {
+    return res.status(400).json({ error: 'StockItemID inválido' });
+  }
+
   try {
     const pool = await poolPromise;
     const result = await pool.request()
-      .input('StockItemID', sql.Int, parseInt(req.params.id))
+      .input('StockItemID', sql.Int, id)
       .execute('SP_GetStockItemDetails');
 
+    if (result.recordset.length === 0) {
+      return res.status(404).json({ error: 'El producto indicado no existe.' });
+    }
     res.json({ data: result.recordset });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(estadoError(err)).json({ error: err.message });
   }
 });
 
