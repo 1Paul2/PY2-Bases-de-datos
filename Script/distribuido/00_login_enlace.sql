@@ -19,7 +19,7 @@ ALTER ROLE db_datareader ADD MEMBER wwi_enlace;
 ALTER ROLE db_datawriter ADD MEMBER wwi_enlace;
 GRANT EXECUTE TO wwi_enlace;
 IF EXISTS (SELECT 1 FROM sys.security_policies WHERE name = N''FilterCustomersBySalesTerritoryRole'' AND is_enabled = 1)
-    ALTER SECURITY POLICY Application.FilterCustomersBySalesTerritoryRole WITH (STATE = OFF);';
+    EXEC (N''ALTER SECURITY POLICY Application.FilterCustomersBySalesTerritoryRole WITH (STATE = OFF);'');';
 EXEC (@sql);
 
 PRINT CONCAT('Login wwi_enlace listo en ', @base);
