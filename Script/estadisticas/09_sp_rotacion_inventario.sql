@@ -8,6 +8,8 @@ CREATE OR ALTER PROCEDURE sp_rotacion_inventario
     @anio INT = NULL,
     @categoria VARCHAR(100) = NULL,
     @proveedor VARCHAR(100) = NULL,
+    @categoriaId INT = NULL,
+    @subcategoriaId INT = NULL,
     @Pagina INT = NULL,
     @PorPagina INT = NULL
 AS
@@ -34,6 +36,12 @@ BEGIN
                 INNER JOIN Syn_StockGroups SG ON SG.StockGroupID = SIG.StockGroupID
                 WHERE SIG.StockItemID = SI.StockItemID
                   AND SG.StockGroupName LIKE '%' + @categoria + '%'))
+          AND (@categoriaId IS NULL OR EXISTS (
+                SELECT 1 FROM Syn_StockItemStockGroups SIG
+                WHERE SIG.StockItemID = SI.StockItemID AND SIG.StockGroupID = @categoriaId))
+          AND (@subcategoriaId IS NULL OR EXISTS (
+                SELECT 1 FROM Syn_StockItemStockGroups SIG
+                WHERE SIG.StockItemID = SI.StockItemID AND SIG.StockGroupID = @subcategoriaId))
     ),
     MovimientosAnio AS (
         SELECT

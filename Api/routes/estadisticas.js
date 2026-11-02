@@ -71,9 +71,11 @@ crearRuta('/seguimiento-clientes', 'sp_seguimiento_compras_cliente',
 crearRuta('/seguimiento-proveedores', 'sp_seguimiento_compras_proveedor',
   [...seguimiento, texto('proveedor', 'proveedor')]);
 
-// #9: rotación de inventario
-crearRuta('/rotacion', 'sp_rotacion_inventario',
-  [entero('anio', 'anio'), texto('categoria', 'categoria'), texto('proveedor', 'proveedor')]);
+// #9: rotación de inventario (mismos filtros de categoría y subcategoría que #7 y #8)
+crearRuta('/rotacion', 'sp_rotacion_inventario', [
+  entero('anio', 'anio'), texto('categoria', 'categoria'), texto('proveedor', 'proveedor'),
+  entero('categoriaId', 'categoriaId'), entero('subcategoriaId', 'subcategoriaId')
+]);
 
 // #10: método de envío favorito
 crearRuta('/envio-favorito', 'sp_metodo_envio_favorito', [

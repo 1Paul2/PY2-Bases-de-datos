@@ -15,8 +15,14 @@ CREATE OR ALTER PROCEDURE SP_UpdateStockItem
     @RecommendedRetailPrice DECIMAL(18, 2) = NULL,
     @TypicalWeightPerUnit DECIMAL(18, 3) = NULL,
     @MarketingComments NVARCHAR(MAX) = NULL,
+    @Barcode NVARCHAR(50) = NULL,
+    @InternalComments NVARCHAR(MAX) = NULL,
     @BinLocation NVARCHAR(20) = NULL,
     @QuantityOnHand INT = NULL,
+    @LastStocktakeQuantity INT = NULL,
+    @LastCostPrice DECIMAL(18, 2) = NULL,
+    @ReorderLevel INT = NULL,
+    @TargetStockLevel INT = NULL,
     @StockGroups NVARCHAR(400) = NULL,
     @LastEditedBy INT = NULL
 AS
@@ -36,6 +42,10 @@ BEGIN
 
     IF @QuantityOnHand IS NOT NULL AND @QuantityOnHand < 0
         THROW 50022, 'La cantidad disponible no puede ser negativa.', 1;
+
+    IF ISNULL(@LastStocktakeQuantity, 0) < 0 OR ISNULL(@LastCostPrice, 0) < 0
+       OR ISNULL(@ReorderLevel, 0) < 0 OR ISNULL(@TargetStockLevel, 0) < 0
+        THROW 50025, 'Los valores de inventario no pueden ser negativos.', 1;
 
     DECLARE @Grupos TABLE (StockGroupID INT PRIMARY KEY);
     INSERT INTO @Grupos (StockGroupID)
@@ -69,6 +79,8 @@ BEGIN
             RecommendedRetailPrice = @RecommendedRetailPrice,
             TypicalWeightPerUnit = ISNULL(@TypicalWeightPerUnit, 0),
             MarketingComments = @MarketingComments,
+            Barcode = @Barcode,
+            InternalComments = @InternalComments,
             LastEditedBy = @LastEditedBy
         WHERE StockItemID = @StockItemID;
 
@@ -77,13 +89,19 @@ BEGIN
             UPDATE Syn_StockItemHoldings
             SET BinLocation = ISNULL(@BinLocation, ''),
                 QuantityOnHand = ISNULL(@QuantityOnHand, QuantityOnHand),
+                LastStocktakeQuantity = ISNULL(@LastStocktakeQuantity, LastStocktakeQuantity),
+                LastCostPrice = ISNULL(@LastCostPrice, LastCostPrice),
+                ReorderLevel = ISNULL(@ReorderLevel, ReorderLevel),
+                TargetStockLevel = ISNULL(@TargetStockLevel, TargetStockLevel),
                 LastEditedBy = @LastEditedBy
             WHERE StockItemID = @StockItemID;
         END
         ELSE
         BEGIN
             INSERT INTO Syn_StockItemHoldings (StockItemID, QuantityOnHand, BinLocation, LastStocktakeQuantity, LastCostPrice, ReorderLevel, TargetStockLevel, LastEditedBy)
-            VALUES (@StockItemID, ISNULL(@QuantityOnHand, 0), ISNULL(@BinLocation, ''), ISNULL(@QuantityOnHand, 0), @UnitPrice, 0, 0, @LastEditedBy);
+            VALUES (@StockItemID, ISNULL(@QuantityOnHand, 0), ISNULL(@BinLocation, ''),
+                    ISNULL(@LastStocktakeQuantity, ISNULL(@QuantityOnHand, 0)), ISNULL(@LastCostPrice, @UnitPrice),
+                    ISNULL(@ReorderLevel, 0), ISNULL(@TargetStockLevel, 0), @LastEditedBy);
         END
 
         IF @StockGroups IS NOT NULL

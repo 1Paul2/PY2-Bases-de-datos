@@ -6,19 +6,34 @@ import Paginacion from '../components/Paginacion';
 
 // Los filtros de año, mes y categorías son listas cargadas de la base,
 // así el usuario solo puede elegir valores que existen.
-function crearReportes({ aniosVentas, aniosCompras, aniosInventario, meses, grupos, categoriasCliente }) {
+function crearReportes({
+  aniosVentas, aniosCompras, aniosInventario, meses, grupos, categoriasCliente, categoriasProveedor, proveedores
+}) {
   const anio = (opciones, etiqueta = 'Año') => ({ nombre: 'anio', etiqueta, opciones });
   const mes = { nombre: 'mes', etiqueta: 'Mes', opciones: meses.map(m => ({ valor: m.Mes, texto: m.Nombre })) };
   const nombresGrupos = grupos.map(g => ({ valor: g.StockGroupName, texto: g.StockGroupName }));
   const idsGrupos = grupos.map(g => ({ valor: g.StockGroupID, texto: g.StockGroupName }));
+  const nombresCatCliente = categoriasCliente.map(c => ({ valor: c.CustomerCategoryName, texto: c.CustomerCategoryName }));
+  // Los SP filtran proveedor por nombre, así que la opción envía el nombre completo
+  const proveedor = {
+    nombre: 'proveedor',
+    etiqueta: 'Proveedor',
+    opciones: proveedores.map(p => ({ valor: p.SupplierName, texto: p.SupplierName }))
+  };
+  // Cliente y producto son miles de registros: se busca por parte del nombre
+  const cliente = { nombre: 'cliente', etiqueta: 'Cliente', tipo: 'text', placeholder: 'Parte del nombre...' };
 
   return {
     proveedor: {
       titulo: 'Estadística de proveedores',
       endpoint: '/estadisticas/proveedor',
       campos: [
-        { nombre: 'proveedor', etiqueta: 'Proveedor', tipo: 'text' },
-        { nombre: 'categoria', etiqueta: 'Categoría', tipo: 'text' }
+        proveedor,
+        {
+          nombre: 'categoria',
+          etiqueta: 'Categoría',
+          opciones: categoriasProveedor.map(c => ({ valor: c.SupplierCategoryName, texto: c.SupplierCategoryName }))
+        }
       ]
     },
 
@@ -26,8 +41,8 @@ function crearReportes({ aniosVentas, aniosCompras, aniosInventario, meses, grup
       titulo: 'Estadística de clientes',
       endpoint: '/estadisticas/cliente',
       campos: [
-        { nombre: 'cliente', etiqueta: 'Cliente', tipo: 'text' },
-        { nombre: 'categoria', etiqueta: 'Categoría', tipo: 'text' }
+        cliente,
+        { nombre: 'categoria', etiqueta: 'Categoría', opciones: nombresCatCliente }
       ]
     },
 
@@ -66,7 +81,7 @@ function crearReportes({ aniosVentas, aniosCompras, aniosInventario, meses, grup
       titulo: 'Seguimiento de compras a clientes',
       endpoint: '/estadisticas/seguimiento-clientes',
       campos: [
-        { nombre: 'cliente', etiqueta: 'Cliente', tipo: 'text' },
+        cliente,
         anio(aniosVentas),
         mes,
         { nombre: 'categoriaId', etiqueta: 'Categoría', opciones: idsGrupos },
@@ -78,7 +93,7 @@ function crearReportes({ aniosVentas, aniosCompras, aniosInventario, meses, grup
       titulo: 'Seguimiento de compras a proveedores',
       endpoint: '/estadisticas/seguimiento-proveedores',
       campos: [
-        { nombre: 'proveedor', etiqueta: 'Proveedor', tipo: 'text' },
+        proveedor,
         anio(aniosCompras),
         mes,
         { nombre: 'categoriaId', etiqueta: 'Categoría', opciones: idsGrupos },
@@ -91,8 +106,9 @@ function crearReportes({ aniosVentas, aniosCompras, aniosInventario, meses, grup
       endpoint: '/estadisticas/rotacion',
       campos: [
         anio(aniosInventario),
-        { nombre: 'categoria', etiqueta: 'Categoría', opciones: nombresGrupos },
-        { nombre: 'proveedor', etiqueta: 'Proveedor', tipo: 'text' }
+        { nombre: 'categoriaId', etiqueta: 'Categoría', opciones: idsGrupos },
+        { nombre: 'subcategoriaId', etiqueta: 'Subcategoría', opciones: idsGrupos },
+        proveedor
       ]
     },
 
@@ -102,13 +118,9 @@ function crearReportes({ aniosVentas, aniosCompras, aniosInventario, meses, grup
       campos: [
         anio(aniosVentas),
         mes,
-        {
-          nombre: 'catCliente',
-          etiqueta: 'Categoría cliente',
-          opciones: categoriasCliente.map(c => ({ valor: c.CustomerCategoryName, texto: c.CustomerCategoryName }))
-        },
+        { nombre: 'catCliente', etiqueta: 'Categoría cliente', opciones: nombresCatCliente },
         { nombre: 'catProducto', etiqueta: 'Categoría producto', opciones: nombresGrupos },
-        { nombre: 'producto', etiqueta: 'Producto', tipo: 'text' }
+        { nombre: 'producto', etiqueta: 'Producto', tipo: 'text', placeholder: 'Parte del nombre...' }
       ]
     }
   };
@@ -144,6 +156,8 @@ export default function Estadisticas() {
   const [pagina, setPagina] = useState(1);
   const [reporte, setReporte] = useState('proveedor');
   const [filtros, setFiltros] = useState(filtrosIniciales);
+  // Copia de los filtros que se envía al SP 300 ms después de dejar de escribir
+  const [filtrosConsulta, setFiltrosConsulta] = useState(filtrosIniciales);
   const [filas, setFilas] = useState([]);
   const [total, setTotal] = useState(0);
   const [error, setError] = useState('');
@@ -154,6 +168,8 @@ export default function Estadisticas() {
   const meses = useCatalogo('/catalogos/meses');
   const grupos = useCatalogo('/catalogos/grupos-productos');
   const categoriasCliente = useCatalogo('/catalogos/categorias-clientes');
+  const categoriasProveedor = useCatalogo('/catalogos/filtros/categorias-proveedores');
+  const proveedores = useCatalogo('/catalogos/proveedores');
 
   const reportes = useMemo(() => crearReportes({
     aniosVentas: aOpcionesAnio(aniosVentas),
@@ -161,17 +177,24 @@ export default function Estadisticas() {
     aniosInventario: aOpcionesAnio(aniosInventario),
     meses,
     grupos,
-    categoriasCliente
-  }), [aniosVentas, aniosCompras, aniosInventario, meses, grupos, categoriasCliente]);
+    categoriasCliente,
+    categoriasProveedor,
+    proveedores
+  }), [aniosVentas, aniosCompras, aniosInventario, meses, grupos, categoriasCliente, categoriasProveedor, proveedores]);
 
   const configuracion = reportes[reporte];
+
+  useEffect(() => {
+    const temporizador = setTimeout(() => setFiltrosConsulta(filtros), 300);
+    return () => clearTimeout(temporizador);
+  }, [filtros]);
 
   useEffect(() => {
     // La paginación la hace el SP; solo se envía la página que se quiere ver
     const params = new URLSearchParams({ pagina, porPagina: POR_PAGINA });
 
     configuracion.campos.forEach(campo => {
-      const valor = filtros[campo.nombre];
+      const valor = filtrosConsulta[campo.nombre];
 
       if (valor) {
         params.append(campo.nombre, valor);
@@ -189,11 +212,13 @@ export default function Estadisticas() {
         setTotal(0);
         setError(err.message);
       });
-  }, [reporte, filtros, pagina, configuracion.endpoint]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [reporte, filtrosConsulta, pagina, configuracion.endpoint]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Al cambiar de reporte o restaurar, los filtros se limpian de inmediato (sin esperar los 300 ms)
   const cambiarReporte = evento => {
     setReporte(evento.target.value);
     setFiltros(filtrosIniciales);
+    setFiltrosConsulta(filtrosIniciales);
     setFilas([]);
     setPagina(1);
   };
@@ -208,6 +233,7 @@ export default function Estadisticas() {
 
   const restaurarFiltros = () => {
     setFiltros(filtrosIniciales);
+    setFiltrosConsulta(filtrosIniciales);
     setPagina(1);
   };
 

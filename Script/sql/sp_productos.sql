@@ -78,6 +78,12 @@ BEGIN
     SIH.BinLocation as BinLocation,
     ISNULL(NULLIF(SIH.BinLocation, ''), 'No indica') as BinLocationTexto,
     ISNULL(SIH.QuantityOnHand, 0) as QuantityOnHandTexto,
+    SI.Barcode as Barcode,
+    SI.InternalComments as InternalComments,
+    SIH.LastStocktakeQuantity as LastStocktakeQuantity,
+    SIH.LastCostPrice as LastCostPrice,
+    SIH.ReorderLevel as ReorderLevel,
+    SIH.TargetStockLevel as TargetStockLevel,
     (SELECT STRING_AGG(SG.StockGroupName, ', ') WITHIN GROUP (ORDER BY SG.StockGroupName)
        FROM Syn_StockItemStockGroups G
        INNER JOIN Syn_StockGroups SG ON SG.StockGroupID = G.StockGroupID
