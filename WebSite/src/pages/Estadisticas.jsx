@@ -156,6 +156,8 @@ export default function Estadisticas() {
   const [pagina, setPagina] = useState(1);
   const [reporte, setReporte] = useState('proveedor');
   const [filtros, setFiltros] = useState(filtrosIniciales);
+  // Copia de los filtros que se envía al SP 300 ms después de dejar de escribir
+  const [filtrosConsulta, setFiltrosConsulta] = useState(filtrosIniciales);
   const [filas, setFilas] = useState([]);
   const [total, setTotal] = useState(0);
   const [error, setError] = useState('');
@@ -183,11 +185,16 @@ export default function Estadisticas() {
   const configuracion = reportes[reporte];
 
   useEffect(() => {
+    const temporizador = setTimeout(() => setFiltrosConsulta(filtros), 300);
+    return () => clearTimeout(temporizador);
+  }, [filtros]);
+
+  useEffect(() => {
     // La paginación la hace el SP; solo se envía la página que se quiere ver
     const params = new URLSearchParams({ pagina, porPagina: POR_PAGINA });
 
     configuracion.campos.forEach(campo => {
-      const valor = filtros[campo.nombre];
+      const valor = filtrosConsulta[campo.nombre];
 
       if (valor) {
         params.append(campo.nombre, valor);
@@ -205,11 +212,13 @@ export default function Estadisticas() {
         setTotal(0);
         setError(err.message);
       });
-  }, [reporte, filtros, pagina, configuracion.endpoint]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [reporte, filtrosConsulta, pagina, configuracion.endpoint]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Al cambiar de reporte o restaurar, los filtros se limpian de inmediato (sin esperar los 300 ms)
   const cambiarReporte = evento => {
     setReporte(evento.target.value);
     setFiltros(filtrosIniciales);
+    setFiltrosConsulta(filtrosIniciales);
     setFilas([]);
     setPagina(1);
   };
@@ -224,6 +233,7 @@ export default function Estadisticas() {
 
   const restaurarFiltros = () => {
     setFiltros(filtrosIniciales);
+    setFiltrosConsulta(filtrosIniciales);
     setPagina(1);
   };
 
