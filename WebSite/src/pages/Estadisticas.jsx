@@ -91,7 +91,8 @@ function crearReportes({ aniosVentas, aniosCompras, aniosInventario, meses, grup
       endpoint: '/estadisticas/rotacion',
       campos: [
         anio(aniosInventario),
-        { nombre: 'categoria', etiqueta: 'Categoría', opciones: nombresGrupos },
+        { nombre: 'categoriaId', etiqueta: 'Categoría', opciones: idsGrupos },
+        { nombre: 'subcategoriaId', etiqueta: 'Subcategoría', opciones: idsGrupos },
         { nombre: 'proveedor', etiqueta: 'Proveedor', tipo: 'text' }
       ]
     },
