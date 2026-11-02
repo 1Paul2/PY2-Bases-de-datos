@@ -1,6 +1,3 @@
-use WideWorldImporters
-GO
-
 CREATE OR ALTER PROCEDURE SP_GetStockGroups
 AS
 BEGIN

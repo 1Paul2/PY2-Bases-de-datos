@@ -1,22 +1,17 @@
-USE WideWorldImporters;
-GO
-
  -- #4
 
 CREATE OR ALTER PROCEDURE sp_top5_clientes_facturas
     @anioInicio INT = NULL,  
     @anioFin INT = NULL,
-    @Pagina INT = NULL,       -- página a consultar (NULL = todas)
-    @PorPagina INT = NULL     -- registros por página (NULL = todos)
+    @Pagina INT = NULL,
+    @PorPagina INT = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
 
-    -- Si no se indican, se usa el rango completo de la base
     IF @anioInicio IS NULL SELECT @anioInicio = MIN(YEAR(InvoiceDate)) FROM Syn_Invoices;
     IF @anioFin IS NULL SELECT @anioFin    = MAX(YEAR(InvoiceDate)) FROM Syn_Invoices;
 
-    -- Validar que los años existan en la base de datos
     IF NOT EXISTS (SELECT 1 FROM Syn_Invoices WHERE YEAR(InvoiceDate) = @anioInicio)
         THROW 50001, 'El año de inicio no existe en la base de datos.', 1;
 

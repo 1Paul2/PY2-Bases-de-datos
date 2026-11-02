@@ -1,10 +1,7 @@
-USE WideWorldImporters;
-GO
-
 -- #6
 CREATE OR ALTER PROCEDURE sp_matriz_ventas_categoria_anio
-    @Pagina INT = NULL,       -- página a consultar (NULL = todas)
-    @PorPagina INT = NULL     -- registros por página (NULL = todos)
+    @Pagina INT = NULL,
+    @PorPagina INT = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -13,7 +10,6 @@ BEGIN
     DECLARE @colsSelect NVARCHAR(MAX);  
     DECLARE @sql NVARCHAR(MAX);
 
-    -- Años en los que realmente hubo ventas
     SELECT @cols = STUFF((
         SELECT ',' + QUOTENAME(CAST(Anio AS VARCHAR(4)))
         FROM (SELECT DISTINCT YEAR(InvoiceDate) AS Anio FROM Syn_Invoices) A

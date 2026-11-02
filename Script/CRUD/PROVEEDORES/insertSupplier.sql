@@ -1,12 +1,10 @@
-USE WideWorldImporters;
-GO
 CREATE OR ALTER PROCEDURE SP_InsertSupplier
     @SupplierReference NVARCHAR(40),
     @SupplierName NVARCHAR(100),
     @SupplierCategoryID INT,
     @PrimaryContactPersonID INT = NULL,
     @AlternateContactPersonID INT = NULL,
-    @PrimaryContactName NVARCHAR(50) = NULL,     -- nombre de un contacto nuevo
+    @PrimaryContactName NVARCHAR(50) = NULL,
     @AlternateContactName NVARCHAR(50) = NULL,
     @DeliveryMethodID INT,
     @DeliveryCityID INT,
@@ -32,7 +30,9 @@ BEGIN
     SET NOCOUNT ON;
     SET XACT_ABORT ON;
 
-    -- Quién hizo el cambio lo decide la base: si no viene, se usa la persona PagWeb (usuario de la página web)
+    IF OBJECT_ID(N'Purchasing.SuppliersSensible') IS NULL
+        THROW 50090, 'Los proveedores solo se crean, editan o eliminan en el corporativo.', 1;
+
     SET @LastEditedBy = ISNULL(@LastEditedBy, dbo.FN_EditorWeb());
 
     IF (@DeliveryLatitude IS NULL AND @DeliveryLongitude IS NOT NULL)
@@ -50,15 +50,11 @@ BEGIN
 
     BEGIN TRY
         BEGIN TRANSACTION;
-
-        -- Contactos: si no se eligió una persona existente pero se escribió un nombre, se crea en Application.People
         EXEC SP_ObtenerOCrearPersona @PrimaryContactName, @LastEditedBy, @PrimaryContactPersonID OUTPUT;
         EXEC SP_ObtenerOCrearPersona @AlternateContactName, @LastEditedBy, @AlternateContactPersonID OUTPUT;
 
         IF @PrimaryContactPersonID IS NULL
             THROW 50030, 'Indique el contacto primario: elija una persona o escriba el nombre de una nueva.', 1;
-
-        -- El ID sale de la secuencia, no de IDENTITY
         DECLARE @NewSupplierID INT = NEXT VALUE FOR Sequences.SupplierID;
 
         INSERT INTO Syn_Suppliers (
@@ -66,11 +62,28 @@ BEGIN
             SupplierReference,
             SupplierName,
             SupplierCategoryID,
-            PrimaryContactPersonID,
-            AlternateContactPersonID,
             DeliveryMethodID,
             DeliveryCityID,
             PostalCityID,
+            PaymentDays,
+            LastEditedBy
+        )
+        VALUES (
+            @NewSupplierID,
+            @SupplierReference,
+            @SupplierName,
+            @SupplierCategoryID,
+            @DeliveryMethodID,
+            @DeliveryCityID,
+            @PostalCityID,
+            @PaymentDays,
+            @LastEditedBy
+        );
+
+        INSERT INTO Syn_SuppliersSensibleDatos (
+            SupplierID,
+            PrimaryContactPersonID,
+            AlternateContactPersonID,
             DeliveryPostalCode,
             PostalPostalCode,
             PhoneNumber,
@@ -83,20 +96,12 @@ BEGIN
             DeliveryLocation,
             BankAccountBranch,
             BankAccountName,
-            BankAccountNumber,
-            PaymentDays,
-            LastEditedBy
+            BankAccountNumber
         )
         VALUES (
             @NewSupplierID,
-            @SupplierReference,
-            @SupplierName,
-            @SupplierCategoryID,
             @PrimaryContactPersonID,
             COALESCE(NULLIF(@AlternateContactPersonID, 0), @PrimaryContactPersonID),
-            @DeliveryMethodID,
-            @DeliveryCityID,
-            @PostalCityID,
             @DeliveryPostalCode,
             @PostalPostalCode,
             ISNULL(@PhoneNumber, ''),
@@ -113,9 +118,7 @@ BEGIN
             END,
             @BankAccountBranch,
             @BankAccountName,
-            @BankAccountNumber,
-            @PaymentDays,
-            @LastEditedBy
+            @BankAccountNumber
         );
 
         SELECT @NewSupplierID AS NewSupplierID;

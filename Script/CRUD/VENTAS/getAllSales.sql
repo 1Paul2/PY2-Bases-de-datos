@@ -1,5 +1,3 @@
-USE WideWorldImporters;
-GO
 CREATE OR ALTER PROCEDURE SP_GetAllSales
     @CustomerName VARCHAR(100) = NULL,
     @DateFrom DATE = NULL,

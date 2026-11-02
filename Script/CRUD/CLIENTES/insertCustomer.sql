@@ -1,12 +1,10 @@
-USE WideWorldImporters;
-GO
 CREATE OR ALTER PROCEDURE SP_InsertCustomer
     @CustomerName NVARCHAR(100),
     @CustomerCategoryID INT,
     @BuyingGroupID INT = NULL,
     @PrimaryContactPersonID INT = NULL,
     @AlternateContactPersonID INT = NULL,
-    @PrimaryContactName NVARCHAR(50) = NULL,     -- nombre de un contacto nuevo
+    @PrimaryContactName NVARCHAR(50) = NULL,
     @AlternateContactName NVARCHAR(50) = NULL,
     @BillToCustomerID INT = NULL,
     @DeliveryMethodID INT,
@@ -17,7 +15,7 @@ CREATE OR ALTER PROCEDURE SP_InsertCustomer
     @PhoneNumber NVARCHAR(20),
     @FaxNumber NVARCHAR(20),
     @PaymentDays INT,
-    @StandardDiscountPercentage DECIMAL(18, 3) = NULL,   -- valores por defecto los pone la base
+    @StandardDiscountPercentage DECIMAL(18, 3) = NULL,
     @IsStatementSent BIT = NULL,
     @IsOnCreditHold BIT = NULL,
     @WebsiteURL NVARCHAR(100),
@@ -33,6 +31,9 @@ AS
 BEGIN
     SET NOCOUNT ON;
     SET XACT_ABORT ON;
+
+    IF OBJECT_ID(N'Sales.CustomersSensible') IS NULL
+        THROW 50090, 'Los clientes solo se crean, editan o eliminan en el corporativo.', 1;
 
     SET @LastEditedBy = ISNULL(@LastEditedBy, dbo.FN_EditorWeb());
 
@@ -52,45 +53,47 @@ BEGIN
     BEGIN TRY
         BEGIN TRANSACTION;
 
-        -- Contactos: si no se eligió una persona existente pero se escribió un nombre, se crea en Application.People
         EXEC SP_ObtenerOCrearPersona @PrimaryContactName, @LastEditedBy, @PrimaryContactPersonID OUTPUT;
         EXEC SP_ObtenerOCrearPersona @AlternateContactName, @LastEditedBy, @AlternateContactPersonID OUTPUT;
 
         IF @PrimaryContactPersonID IS NULL
             THROW 50030, 'Indique el contacto primario: elija una persona o escriba el nombre de una nueva.', 1;
 
-        -- El ID sale de la secuencia, no de IDENTITY
         DECLARE @NewCustomerID INT = NEXT VALUE FOR Sequences.CustomerID;
 
-        INSERT INTO Syn_Customers (CustomerID, CustomerName, CustomerCategoryID, BuyingGroupID, PrimaryContactPersonID, AlternateContactPersonID, BillToCustomerID, DeliveryMethodID, DeliveryCityID, PostalCityID, DeliveryPostalCode, PostalPostalCode, PhoneNumber, FaxNumber, PaymentDays, StandardDiscountPercentage, IsStatementSent, IsOnCreditHold, WebsiteURL, DeliveryAddressLine1, DeliveryAddressLine2, PostalAddressLine1, PostalAddressLine2, AccountOpenedDate, DeliveryLocation, LastEditedBy)
+        INSERT INTO Syn_Customers (CustomerID, CustomerName, CustomerCategoryID, BuyingGroupID, BillToCustomerID, DeliveryMethodID, DeliveryCityID, PostalCityID, PaymentDays, StandardDiscountPercentage, IsStatementSent, IsOnCreditHold, AccountOpenedDate, LastEditedBy)
         VALUES (
             @NewCustomerID,
             @CustomerName,
             @CustomerCategoryID,
             NULLIF(@BuyingGroupID, 0),
-            @PrimaryContactPersonID,
-            NULLIF(@AlternateContactPersonID, 0),
-            -- BillToCustomerID es NOT NULL: si no viene, el cliente se factura a si mismo
             COALESCE(NULLIF(@BillToCustomerID, 0), @NewCustomerID),
             @DeliveryMethodID,
             @DeliveryCityID,
             @PostalCityID,
-            @DeliveryPostalCode,
-            @PostalPostalCode,
-            ISNULL(@PhoneNumber, ''),
-            ISNULL(@FaxNumber, ''),
             @PaymentDays,
             ISNULL(@StandardDiscountPercentage, 0),
             ISNULL(@IsStatementSent, 0),
             ISNULL(@IsOnCreditHold, 0),
+            ISNULL(@AccountOpenedDate, CAST(GETDATE() AS DATE)),
+            COALESCE(@LastEditedBy, dbo.FN_EditorWeb())
+        );
+
+        INSERT INTO Syn_CustomersSensibleDatos (CustomerID, PrimaryContactPersonID, AlternateContactPersonID, PhoneNumber, FaxNumber, WebsiteURL, DeliveryAddressLine1, DeliveryAddressLine2, DeliveryPostalCode, DeliveryLocation, PostalAddressLine1, PostalAddressLine2, PostalPostalCode)
+        VALUES (
+            @NewCustomerID,
+            @PrimaryContactPersonID,
+            NULLIF(@AlternateContactPersonID, 0),
+            ISNULL(@PhoneNumber, ''),
+            ISNULL(@FaxNumber, ''),
             ISNULL(@WebsiteURL, ''),
             @DeliveryAddressLine1,
             @DeliveryAddressLine2,
+            @DeliveryPostalCode,
+            CASE WHEN @DeliveryLatitude IS NULL AND @DeliveryLongitude IS NULL THEN NULL ELSE GEOGRAPHY::Point(@DeliveryLatitude, @DeliveryLongitude, 4326) END,
             @PostalAddressLine1,
             @PostalAddressLine2,
-            ISNULL(@AccountOpenedDate, CAST(GETDATE() AS DATE)),
-            CASE WHEN @DeliveryLatitude IS NULL AND @DeliveryLongitude IS NULL THEN NULL ELSE GEOGRAPHY::Point(@DeliveryLatitude, @DeliveryLongitude, 4326) END,
-            COALESCE(@LastEditedBy, dbo.FN_EditorWeb())
+            @PostalPostalCode
         );
 
         SELECT @NewCustomerID AS NewCustomerID;

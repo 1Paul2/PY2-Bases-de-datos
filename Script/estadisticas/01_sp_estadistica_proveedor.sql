@@ -1,14 +1,10 @@
-USE WideWorldImporters;
-GO
-
 -- #1
--- Monto mínimo, máximo y promedio de las órdenes de compra por proveedor y categoría (ROLLUP)
 
 CREATE OR ALTER PROCEDURE sp_estadistica_proveedor
     @proveedor VARCHAR(100) = '',
     @categoria VARCHAR(100) = '',
-    @Pagina INT = NULL,       -- página a consultar (NULL = todas)
-    @PorPagina INT = NULL     -- registros por página (NULL = todos)
+    @Pagina INT = NULL,
+    @PorPagina INT = NULL
 AS
 BEGIN
     SET NOCOUNT ON;

@@ -68,12 +68,30 @@ El enunciado pide que cada sucursal maneje su propio inventario y facturación. 
 |-------|------------------------|
 | `Sales.Orders`, `Sales.OrderLines` | Por el vendedor del pedido |
 | `Sales.Invoices`, `Sales.InvoiceLines` | Por el vendedor de la factura |
-| `Sales.CustomerTransactions` | Sigue a su factura |
+| `Sales.CustomerTransactions` | Los pagos con factura siguen a su factura; los 26 637 pagos sin factura se reparten por `CustomerTransactionID` par (San José) o impar (Limón) |
 | `Warehouse.StockItemTransactions` | Las salidas (*Stock Issue*, 228 265) siguen a su factura; las entradas (*Stock Receipt*, 8 358) siguen a su orden de compra; los 44 ajustes de inventario se reparten por `StockItemTransactionID` par o impar |
-| `Purchasing.PurchaseOrders`, `PurchaseOrderLines`, `SupplierTransactions` | Por `PurchaseOrderID` par (San José) o impar (Limón). Las 2 074 órdenes tienen el mismo contacto, así que no hay un criterio de negocio mejor |
+| `Purchasing.PurchaseOrders`, `PurchaseOrderLines`, `SupplierTransactions` | Por `PurchaseOrderID` par (San José) o impar (Limón). Las 2 074 órdenes tienen el mismo contacto, así que no hay un criterio de negocio mejor. Los 366 pagos a proveedores sin orden se reparten por `SupplierTransactionID` par o impar |
+| `Warehouse.StockItemHoldings` | Cada sucursal tiene una fila por producto. La existencia actual se reparte a la mitad (San José se queda con el sobrante si es impar) |
+
+El corporativo no guarda ninguna de estas tablas: las estadísticas consolidadas se calculan desde las sucursales (sección 4).
 
 **Por qué las compras van por sucursal y no centralizadas:** el enunciado dice que cada sucursal maneja su propio inventario, y cada compra es una entrada de inventario (*Stock Receipt*) en una sucursal concreta. Además, las estadísticas deben poder filtrarse por sucursal, y tres de ellas se calculan con compras (reportes 1, 5 y 8). Si las compras estuvieran en el corporativo, esos reportes no tendrían sucursal.
-| `Warehouse.StockItemHoldings` | Cada sucursal tiene una fila por producto. La existencia actual se reparte a la mitad (San José se queda con el sobrante si es impar) |
+
+**La fragmentación es correcta:** se comprobó con los datos reales.
+
+| Propiedad | Cómo se comprobó |
+|-----------|------------------|
+| Completitud | San José + Limón suman exactamente lo original en las 10 tablas: 35 134 + 35 376 = 70 510 facturas, 113 631 + 114 634 = 228 265 líneas, 1 037 + 1 037 = 2 074 órdenes de compra, y lo mismo en pedidos, pagos, movimientos y existencias |
+| Disyunción | Ninguna factura ni orden de compra está en las dos sucursales (consulta cruzada por linked server) |
+| Reconstrucción | La unión de las facturas de ambas sucursales devuelve la tabla original; no quedan líneas, pedidos ni movimientos sin su factura |
+
+**IDs nuevos sin choques:** las secuencias de cada sucursal se reinician en un rango propio, así un ID nunca se repite entre nodos y además indica dónde se creó.
+
+| Nodo | Rango de los IDs nuevos (facturas, pedidos, compras, movimientos, productos...) |
+|------|------------------------------------------------------------------------------|
+| Corporativo | Sigue desde el último ID original (todos son menores que 1 000 000) |
+| San José | Desde 1 000 000 |
+| Limón | Desde 2 000 000 |
 
 Desde ahí, todo lo nuevo se guarda en la sucursal donde está conectado el administrador.
 
@@ -100,9 +118,21 @@ El enunciado pide que los datos de privacidad y contacto estén en el corporativ
 | Fragmento | Columnas |
 |-----------|----------|
 | Sucursales (público) | `PersonID`, `FullName`, `PreferredName`, `SearchName`, `IsEmployee`, `IsSalesperson`, `LastEditedBy` |
-| Corporativo (sensible) | `PersonID`, `PhoneNumber`, `FaxNumber`, `EmailAddress`, `LogonName`, `HashedPassword`, `IsPermittedToLogon`, `Photo`, `UserPreferences`, `CustomFields` |
+| Corporativo (sensible) | `PersonID`, `PhoneNumber`, `FaxNumber`, `EmailAddress`, `LogonName`, `HashedPassword`, `IsPermittedToLogon`, `IsExternalLogonProvider`, `IsSystemUser`, `Photo`, `UserPreferences`, `CustomFields`, `OtherLanguages` (calculada a partir de `CustomFields`) |
 
 **Por qué la ciudad se queda en las sucursales:** la ciudad (`DeliveryCityID`) es un dato general, no de contacto, y la necesitan las ventas y el reporte 10 (método de envío según el lugar). La dirección exacta, el código postal y la ubicación en el mapa sí son sensibles y van al corporativo.
+
+**Cómo quedó implementada** (`Script/distribuido/03_fragmentacion_vertical.sql`):
+
+| Nodo | Tablas |
+|------|--------|
+| Corporativo | Fragmento público en `Sales.Customers`, `Purchasing.Suppliers` y `Application.People`; fragmento sensible en `Sales.CustomersSensible`, `Purchasing.SuppliersSensible` y `Application.PeopleSensible` (misma llave primaria, con FK a la tabla pública). Las vistas `Sales.vClientesCompletos`, `Purchasing.vProveedoresCompletos` y `Application.vPersonasCompletas` reconstruyen la tabla original con un `JOIN` por la llave |
+| Sucursales | Solo el fragmento público. Las columnas sensibles también se quitaron del historial (`*_Archive`), para que no quede ninguna copia en la sucursal |
+
+- Las tres tablas siguen siendo temporales: el historial se desactiva para quitar las columnas y se vuelve a activar.
+- Los procedimientos leen el fragmento sensible con los sinónimos `Syn_CustomersSensible`, `Syn_SuppliersSensible` y `Syn_PeopleSensible`. En el corporativo apuntan a sus objetos locales y en las sucursales al corporativo por `LS_CORPORATIVO`, así el mismo procedimiento funciona en los tres nodos. Los de clientes y proveedores apuntan a las vistas `vCustomersSensible` y `vSuppliersSensible`, que entregan la ubicación como `Latitud` y `Longitud`, porque el tipo `geography` no se puede leer por linked server.
+- Crear, editar y borrar clientes y proveedores escribe en los dos fragmentos dentro de la misma transacción. Solo funciona en el corporativo. Antes de borrar, el procedimiento revisa por linked server que el cliente o proveedor no tenga facturas, pedidos ni compras en ninguna sucursal; si una sucursal no responde, no borra.
+- Se eliminaron objetos de ejemplo de WWI que usaban columnas sensibles y que la aplicación no usa: las vistas `Website.Customers` y `Website.Suppliers`, 6 procedimientos de `Website`, y la política de seguridad por filas `FilterCustomersBySalesTerritoryRole` con su función.
 
 #### 2.3 Replicada completa: catálogos
 
@@ -157,7 +187,7 @@ Dentro de un mismo nodo, los procedimientos de productos usan transacciones y co
 ### 6. Riesgos a revisar en los bloques siguientes
 
 - `StockItems`, `Customers`, `Suppliers` y `People` son **tablas temporales** (tienen historial con `ValidFrom` y `ValidTo`). La replicación no las acepta así, así que hay que desactivar el historial antes de publicarlas.
-- Las columnas sensibles se borran de las tablas en las sucursales. Los procedimientos del Proyecto 1 que las leen (detalle de cliente y de proveedor, mapa) tendrán que traerlas del corporativo por linked server.
+- Si el corporativo no responde, el detalle de cliente y de proveedor en las sucursales falla, porque sus datos de contacto viven allá. Se resuelve en el bloque de fallas.
 - La tabla de usuarios se replica con la contraseña ya encriptada, así que la llave simétrica debe crearse igual en los tres nodos (mismo `KEY_SOURCE` e `IDENTITY_VALUE`).
 
 ### 7. Roles
@@ -227,7 +257,10 @@ El enunciado define dos roles. Cada usuario tiene un rol y, si es administrador,
 │   │   ├── PROVEEDORES/
 │   │   ├── PRODUCTOS/
 │   │   └── VENTAS/
-│   └── estadisticas/                # Los 10 reportes (01_ … 10_)
+│   ├── estadisticas/                # Los 10 reportes (01_ … 10_)
+│   └── distribuido/                 # Proyecto 2: login de enlace, linked servers, distribuidor,
+│                                    # fragmentación vertical y horizontal, secuencias y verificación
+├── Docker/                          # Proyecto 2: docker-compose.yml, levantar.ps1 y verificar.ps1
 ├── Api/                             # Servicio API
 │   ├── index.js                     # Servidor Express y registro de rutas
 │   ├── db.js                        # Conexión a SQL Server
@@ -279,7 +312,13 @@ El script hace, en orden:
 | 3 | `Script/distribuido/00_login_enlace.sql` | Crea el login `wwi_enlace` en cada nodo, sin permisos de administrador: solo lee, escribe y ejecuta procedimientos en su base. Desactiva la política de seguridad por filas de ejemplo de WWI, que ocultaba los clientes a todo usuario que no fuera dueño de la base |
 | 4 | `Script/distribuido/01_linked_servers.sql` | Crea los linked servers (`LS_SANJOSE` y `LS_LIMON` en el corporativo, `LS_CORPORATIVO` en cada sucursal), que se conectan como `wwi_enlace`. Tienen tiempo de espera de 5 s para conectar y 30 s por consulta, para que un nodo caído responda con error en vez de bloquear |
 | 5 | `Script/distribuido/02_distribuidor.sql` | Configura el corporativo como distribuidor de la replicación, con la master key en `distribution` que Microsoft pide antes de replicar |
-| 6 | `verificar.ps1` | Muestra el estado de cada nodo |
+| 6 | `Script/distribuido/03_fragmentacion_vertical.sql` | Separa los datos sensibles de clientes, proveedores y personas (sección 2.2) y crea los sinónimos `Syn_*Sensible` |
+| 7 | `Script/distribuido/04_fragmentacion_horizontal.sql` | Reparte ventas, compras, movimientos y existencias entre San José y Limón, y los quita del corporativo (sección 2.1) |
+| 8 | `Script/distribuido/05_secuencias.sql` | Reinicia las secuencias de cada sucursal en su rango de IDs |
+| 9 | `Script/sql`, `Script/CRUD`, `Script/estadisticas` | Instala los sinónimos y procedimientos del Proyecto 1 en los tres nodos |
+| 10 | `verificar.ps1` | Muestra el estado de cada nodo |
+
+Los pasos 6 y 7 quedan registrados en la tabla `dbo.ControlFragmentacion` de cada base: si se vuelven a correr, no repiten el reparto.
 
 Se puede correr de nuevo sin perder datos. Docker necesita unos 6 GB de memoria libres para los tres nodos.
 

@@ -1,6 +1,3 @@
-use WideWorldImporters
-GO
-
 CREATE OR ALTER PROCEDURE SP_GetSales
     @CustomerName NVARCHAR(100) = NULL,
     @InvoiceDateFrom DATE = NULL,

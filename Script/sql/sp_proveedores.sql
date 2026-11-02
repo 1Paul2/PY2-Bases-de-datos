@@ -1,6 +1,3 @@
-use WideWorldImporters
-GO
-
 CREATE OR ALTER PROCEDURE SP_GetSupplierCategories
 AS
 BEGIN
@@ -42,8 +39,8 @@ AS
 BEGIN
     SELECT S.SupplierReference as SupplierReference,
     S.SupplierCategoryID as SupplierCategoryID,
-    S.PrimaryContactPersonID as PrimaryContactPersonID,
-    S.AlternateContactPersonID as AlternateContactPersonID,
+    SS.PrimaryContactPersonID as PrimaryContactPersonID,
+    SS.AlternateContactPersonID as AlternateContactPersonID,
     S.DeliveryMethodID as DeliveryMethodID,
     S.DeliveryCityID as DeliveryCityID,
     S.PostalCityID as PostalCityID,
@@ -54,31 +51,32 @@ BEGIN
     ISNULL(DM.DeliveryMethodName, 'No indica') as DeliveryMethodName,
     C.CityName as DeliveryCityName,
     PC.CityName as PostalCityName,
-    S.DeliveryPostalCode as DeliveryPostalCode,
-    S.PostalPostalCode as PostalPostalCode,
-    S.PhoneNumber as PhoneNumber,
-    S.FaxNumber as FaxNumber,
-    S.WebsiteURL as WebsiteURL,
-    S.DeliveryAddressLine1 as DeliveryAddressLine1,
-    S.DeliveryAddressLine2 as DeliveryAddressLine2,
-    ISNULL(NULLIF(S.DeliveryAddressLine2, ''), 'No indica') as DeliveryAddressLine2Texto,
-    S.PostalAddressLine1 as PostalAddressLine1,
-    S.PostalAddressLine2 as PostalAddressLine2,
-    ISNULL(NULLIF(S.PostalAddressLine2, ''), 'No indica') as PostalAddressLine2Texto,
-    ISNULL(NULLIF(S.FaxNumber, ''), 'No indica') as FaxTexto,
-    ISNULL(NULLIF(S.WebsiteURL, ''), 'No indica') as WebsiteTexto,
-    S.DeliveryLocation.Lat as DeliveryLatitude,
-    S.DeliveryLocation.Long as DeliveryLongitude,
-    S.BankAccountBranch as BankAccountBranch,
-    S.BankAccountName as BankAccountName,
-    S.BankAccountNumber as BankAccountNumber,
+    SS.DeliveryPostalCode as DeliveryPostalCode,
+    SS.PostalPostalCode as PostalPostalCode,
+    SS.PhoneNumber as PhoneNumber,
+    SS.FaxNumber as FaxNumber,
+    SS.WebsiteURL as WebsiteURL,
+    SS.DeliveryAddressLine1 as DeliveryAddressLine1,
+    SS.DeliveryAddressLine2 as DeliveryAddressLine2,
+    ISNULL(NULLIF(SS.DeliveryAddressLine2, ''), 'No indica') as DeliveryAddressLine2Texto,
+    SS.PostalAddressLine1 as PostalAddressLine1,
+    SS.PostalAddressLine2 as PostalAddressLine2,
+    ISNULL(NULLIF(SS.PostalAddressLine2, ''), 'No indica') as PostalAddressLine2Texto,
+    ISNULL(NULLIF(SS.FaxNumber, ''), 'No indica') as FaxTexto,
+    ISNULL(NULLIF(SS.WebsiteURL, ''), 'No indica') as WebsiteTexto,
+    SS.Latitud as DeliveryLatitude,
+    SS.Longitud as DeliveryLongitude,
+    SS.BankAccountBranch as BankAccountBranch,
+    SS.BankAccountName as BankAccountName,
+    SS.BankAccountNumber as BankAccountNumber,
     S.PaymentDays as PaymentDays,
     S.LastEditedBy as LastEditedBy
     FROM Syn_Suppliers S
+    INNER JOIN Syn_SuppliersSensible SS ON SS.SupplierID = S.SupplierID
     INNER JOIN Syn_SupplierCategories SC ON SC.SupplierCategoryID = S.SupplierCategoryID
     LEFT JOIN Syn_DeliveryMethods DM ON S.DeliveryMethodID = DM.DeliveryMethodID
-    INNER JOIN Syn_People P ON P.PersonID = S.PrimaryContactPersonID
-    LEFT JOIN Syn_People P2 ON P2.PersonID = S.AlternateContactPersonID
+    INNER JOIN Syn_People P ON P.PersonID = SS.PrimaryContactPersonID
+    LEFT JOIN Syn_People P2 ON P2.PersonID = SS.AlternateContactPersonID
     LEFT JOIN Syn_Cities C ON C.CityID = S.DeliveryCityID
     LEFT JOIN Syn_Cities PC ON PC.CityID = S.PostalCityID
 

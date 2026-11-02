@@ -1,5 +1,3 @@
-use WideWorldImporters;
-GO
 CREATE OR ALTER PROCEDURE SP_UpdateSupplier
     @SupplierID INT,
     @SupplierReference NVARCHAR(40),
@@ -7,7 +5,7 @@ CREATE OR ALTER PROCEDURE SP_UpdateSupplier
     @SupplierCategoryID INT,
     @PrimaryContactPersonID INT = NULL,
     @AlternateContactPersonID INT = NULL,
-    @PrimaryContactName NVARCHAR(50) = NULL,     -- nombre de un contacto nuevo
+    @PrimaryContactName NVARCHAR(50) = NULL,
     @AlternateContactName NVARCHAR(50) = NULL,
     @DeliveryMethodID INT,
     @DeliveryCityID INT,
@@ -33,7 +31,8 @@ BEGIN
     SET NOCOUNT ON;
     SET XACT_ABORT ON;
 
-    -- Quién hizo el cambio lo decide la base: si no viene, se usa la persona PagWeb (usuario de la página web)
+    IF OBJECT_ID(N'Purchasing.SuppliersSensible') IS NULL
+        THROW 50090, 'Los proveedores solo se crean, editan o eliminan en el corporativo.', 1;
     SET @LastEditedBy = ISNULL(@LastEditedBy, dbo.FN_EditorWeb());
 
     IF (@DeliveryLatitude IS NULL AND @DeliveryLongitude IS NOT NULL)
@@ -49,7 +48,6 @@ BEGIN
     BEGIN TRY
         BEGIN TRANSACTION;
 
-        -- Contactos: si no se eligió una persona existente pero se escribió un nombre, se crea en Application.People
         EXEC SP_ObtenerOCrearPersona @PrimaryContactName, @LastEditedBy, @PrimaryContactPersonID OUTPUT;
         EXEC SP_ObtenerOCrearPersona @AlternateContactName, @LastEditedBy, @AlternateContactPersonID OUTPUT;
 
@@ -66,11 +64,16 @@ BEGIN
         SET SupplierReference = @SupplierReference,
             SupplierName = @SupplierName,
             SupplierCategoryID = @SupplierCategoryID,
-            PrimaryContactPersonID = @PrimaryContactPersonID,
-            AlternateContactPersonID = COALESCE(NULLIF(@AlternateContactPersonID, 0), @PrimaryContactPersonID),
             DeliveryMethodID = @DeliveryMethodID,
             DeliveryCityID = @DeliveryCityID,
             PostalCityID = @PostalCityID,
+            PaymentDays = @PaymentDays,
+            LastEditedBy = @LastEditedBy
+        WHERE SupplierID = @SupplierID;
+
+        UPDATE Syn_SuppliersSensibleDatos
+        SET PrimaryContactPersonID = @PrimaryContactPersonID,
+            AlternateContactPersonID = COALESCE(NULLIF(@AlternateContactPersonID, 0), @PrimaryContactPersonID),
             DeliveryPostalCode = @DeliveryPostalCode,
             PostalPostalCode = @PostalPostalCode,
             PhoneNumber = ISNULL(@PhoneNumber, ''),
@@ -87,9 +90,7 @@ BEGIN
             END,
             BankAccountBranch = @BankAccountBranch,
             BankAccountName = @BankAccountName,
-            BankAccountNumber = @BankAccountNumber,
-            PaymentDays = @PaymentDays,
-            LastEditedBy = @LastEditedBy
+            BankAccountNumber = @BankAccountNumber
         WHERE SupplierID = @SupplierID;
 
         COMMIT TRANSACTION;

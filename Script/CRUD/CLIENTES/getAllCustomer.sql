@@ -1,5 +1,3 @@
-USE WideWorldImporters;
-GO
 CREATE OR ALTER PROCEDURE SP_GetAllCustomers
 AS
 BEGIN
@@ -14,26 +12,28 @@ BEGIN
         B.CustomerName AS BillToCustomer,
         DM.DeliveryMethodName,
         City.CityName AS DeliveryCity,
-        C.PostalPostalCode,
-        C.PhoneNumber,
-        C.FaxNumber,
+        S.PostalPostalCode,
+        S.PhoneNumber,
+        S.FaxNumber,
         C.PaymentDays,
-        C.WebsiteURL,
-        C.DeliveryAddressLine1,
-        C.DeliveryAddressLine2,
-        C.PostalAddressLine1,
-        C.PostalAddressLine2,
-        C.DeliveryLocation.Lat AS DeliveryLatitude,
-        C.DeliveryLocation.Long AS DeliveryLongitude
+        S.WebsiteURL,
+        S.DeliveryAddressLine1,
+        S.DeliveryAddressLine2,
+        S.PostalAddressLine1,
+        S.PostalAddressLine2,
+        S.Latitud AS DeliveryLatitude,
+        S.Longitud AS DeliveryLongitude
     FROM Syn_Customers C
-    INNER JOIN Syn_CustomerCategories CC 
+    INNER JOIN Syn_CustomersSensible S
+        ON S.CustomerID = C.CustomerID
+    INNER JOIN Syn_CustomerCategories CC
         ON C.CustomerCategoryID = CC.CustomerCategoryID
-    LEFT JOIN Syn_BuyingGroups BG 
+    LEFT JOIN Syn_BuyingGroups BG
         ON C.BuyingGroupID = BG.BuyingGroupID
-    INNER JOIN Syn_People P1 
-        ON C.PrimaryContactPersonID = P1.PersonID
-    LEFT JOIN Syn_People P2 
-        ON C.AlternateContactPersonID = P2.PersonID
+    INNER JOIN Syn_People P1
+        ON S.PrimaryContactPersonID = P1.PersonID
+    LEFT JOIN Syn_People P2
+        ON S.AlternateContactPersonID = P2.PersonID
     LEFT JOIN Syn_Customers B 
         ON C.BillToCustomerID = B.CustomerID
     INNER JOIN Syn_DeliveryMethods DM 

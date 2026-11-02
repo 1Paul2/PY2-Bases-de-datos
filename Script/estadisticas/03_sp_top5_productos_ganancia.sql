@@ -1,12 +1,9 @@
-USE WideWorldImporters;
-GO
-
  -- #3
 CREATE OR ALTER PROCEDURE sp_top5_productos_ganancia
     @anio INT = NULL,
     @anioFin INT = NULL,
-    @Pagina INT = NULL,       -- página a consultar (NULL = todas)
-    @PorPagina INT = NULL     -- registros por página (NULL = todos)
+    @Pagina INT = NULL,
+    @PorPagina INT = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
