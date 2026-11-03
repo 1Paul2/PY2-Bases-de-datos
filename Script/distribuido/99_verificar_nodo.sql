@@ -28,7 +28,10 @@ IF @base IS NOT NULL
         EXEC (N''DECLARE @c int = (SELECT COUNT(*) FROM Sales.CustomersSensible), @p int = (SELECT COUNT(*) FROM Purchasing.SuppliersSensible), @g int = (SELECT COUNT(*) FROM Application.PeopleSensible);
               PRINT CONCAT(''''  Sensibles : '''', @c, '''' clientes, '''', @p, '''' proveedores, '''', @g, '''' personas (fragmento sensible)'''');'');
     ELSE
-        PRINT CONCAT(''  Sensibles : '', CASE WHEN @sens = 0 THEN N''ninguna columna sensible'' ELSE CONCAT(@sens, N'' columnas sensibles'') END);');
+        PRINT CONCAT(''  Sensibles : '', CASE WHEN @sens = 0 THEN N''ninguna columna sensible'' ELSE CONCAT(@sens, N'' columnas sensibles'') END);
+    IF OBJECT_ID(N''Seguridad.Usuarios'') IS NOT NULL
+        EXEC (N''DECLARE @u int = (SELECT COUNT(*) FROM Seguridad.Usuarios);
+              PRINT CONCAT(''''  Usuarios  : '''', @u, '''' (llave de contrasenas: '''', CASE WHEN KEY_ID(N''''LlaveUsuarios'''') IS NULL THEN N''''no'''' ELSE N''''si'''' END, '''')'''');'');');
 
 DECLARE @ls sysname, @inicio datetime2, @ms int;
 DECLARE c CURSOR LOCAL FAST_FORWARD FOR

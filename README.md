@@ -359,7 +359,7 @@ El script hace, en orden:
 | 8 | `Script/distribuido/05_secuencias.sql` | Reinicia las secuencias de cada sucursal en su rango de IDs |
 | 9 | `Script/distribuido/06_seguridad.sql` | Crea la tabla de usuarios, la llave de las contraseñas y los procedimientos de login en los tres nodos, y los usuarios de ejemplo en el corporativo (sección 7.1) |
 | 10 | `Script/sql`, `Script/CRUD`, `Script/estadisticas` | Instala los sinónimos y procedimientos del Proyecto 1 en los tres nodos |
-| 11 | `verificar.ps1` | Muestra el estado de cada nodo |
+| 11 | `verificar.ps1` | Muestra el estado de cada nodo, incluidos los usuarios y si existe la llave |
 
 Los pasos 6 y 7 quedan registrados en la tabla `dbo.ControlFragmentacion` de cada base: si se vuelven a correr, no repiten el reparto.
 
