@@ -182,13 +182,14 @@ Dentro de un mismo nodo, los procedimientos de productos usan transacciones y co
 | Linked servers en el corporativo | `LS_SANJOSE`, `LS_LIMON` |
 | Columna de sucursal en los resúmenes | `Sucursal` con los valores `SJ` y `LI` |
 | Tabla de usuarios (corporativo) | `Seguridad.Usuarios` |
+| Llave y certificado de las contraseñas | `LlaveUsuarios` (AES 256), `CertUsuarios` |
 | Usuarios de base de datos para la API | `app_admin_sj`, `app_admin_li`, `app_corporativo` |
 
 ### 6. Riesgos a revisar en los bloques siguientes
 
 - `StockItems`, `Customers`, `Suppliers` y `People` son **tablas temporales** (tienen historial con `ValidFrom` y `ValidTo`). La replicación no las acepta así, así que hay que desactivar el historial antes de publicarlas.
 - Si el corporativo no responde, el detalle de cliente y de proveedor en las sucursales falla, porque sus datos de contacto viven allá. Se resuelve en el bloque de fallas.
-- La tabla de usuarios se replica con la contraseña ya encriptada, así que la llave simétrica debe crearse igual en los tres nodos (mismo `KEY_SOURCE` e `IDENTITY_VALUE`).
+- La tabla de usuarios se replica con la contraseña ya encriptada, así que la llave simétrica debe crearse igual en los tres nodos (mismo `KEY_SOURCE` e `IDENTITY_VALUE`). Resuelto en `06_seguridad.sql` (sección 7.1).
 
 ### 7. Roles
 
@@ -202,6 +203,43 @@ El enunciado define dos roles. Cada usuario tiene un rol y, si es administrador,
 - La gestión de clientes y proveedores del Proyecto 1 se mantiene, pero en el corporativo: ahí están sus datos sensibles y es el maestro que los replica a las sucursales.
 - Crear ventas se mantiene para el administrador, porque cada sucursal maneja su propia facturación.
 - Cada rol usa un usuario de base de datos distinto (`app_admin_sj`, `app_admin_li`, `app_corporativo`) que solo tiene permiso de `EXECUTE` sobre los procedimientos de su rol. Así, aunque la web tuviera un error, la base no deja hacer lo que el rol no permite.
+
+#### 7.1 Usuarios y contraseñas cifradas
+
+`Script/distribuido/06_seguridad.sql` crea en los tres nodos:
+
+| Objeto | Qué es |
+|--------|--------|
+| `Seguridad.Usuarios` | `IdUser`, `Username`, `Password` (cifrada, `varbinary`), `FullName`, `Active`, `Rol`, `Email`, `HireDate` y `Sucursal`. La base no acepta un administrador sin sucursal ni un corporativo con sucursal |
+| `LlaveUsuarios` | Llave simétrica AES 256 protegida por el certificado `CertUsuarios`, que a su vez protege la master key de la base. El certificado y la master key son distintos en cada nodo, pero la llave se genera con el mismo `KEY_SOURCE` e `IDENTITY_VALUE` (variables `LLAVE_ORIGEN` y `LLAVE_IDENTIDAD` de `Docker/.env`), así que es la misma en los tres y cualquier nodo descifra una contraseña cifrada en el corporativo |
+| `Seguridad.SP_CrearUsuario` | Cifra la contraseña con `EncryptByKey` y guarda el usuario. Solo funciona en el corporativo, que es el maestro |
+| `Seguridad.SP_IniciarSesion` | Descifra con `DecryptByKey` y compara dentro de SQL Server. Devuelve solo `IdUser`, `Username`, `FullName`, `Rol` y `Sucursal`, nunca la contraseña |
+
+Detalles de seguridad:
+
+- La contraseña se cifra con el nombre de usuario como *autenticador*: si alguien copia la contraseña cifrada de un usuario a otro, ya no se puede descifrar.
+- Un usuario que no existe y una contraseña incorrecta dan el mismo mensaje (`50044`), para no revelar qué usuarios existen. La comparación distingue mayúsculas de minúsculas.
+- Los dos procedimientos corren `WITH EXECUTE AS OWNER`: el usuario de la API solo necesita permiso de `EXECUTE` sobre ellos, sin poder leer la tabla ni usar la llave directamente.
+
+Usuarios de ejemplo (se crean solo en el corporativo; las sucursales los reciben por replicación). Su contraseña es la de `USUARIOS_PASSWORD` en `Docker/.env`:
+
+| Usuario | Rol | Sucursal |
+|---------|-----|----------|
+| `admin.sj` | Administrador | SJ |
+| `admin.li` | Administrador | LI |
+| `corporativo` | Corporativo | — |
+
+Errores de estos procedimientos:
+
+| Código | Mensaje |
+|-------:|---------|
+| 50040 | La contraseña debe tener al menos 8 caracteres |
+| 50041 | El rol debe ser Administrador o Corporativo |
+| 50042 | Un administrador debe tener sucursal (SJ o LI) y un usuario corporativo no lleva sucursal |
+| 50043 | Ya existe un usuario con ese nombre |
+| 50044 | Usuario o contraseña incorrectos |
+| 50045 | El usuario está inactivo |
+| 50090 | Los usuarios solo se crean en el corporativo |
 
 ### 8. Decisiones tomadas
 
@@ -259,7 +297,8 @@ El enunciado define dos roles. Cada usuario tiene un rol y, si es administrador,
 │   │   └── VENTAS/
 │   ├── estadisticas/                # Los 10 reportes (01_ … 10_)
 │   └── distribuido/                 # Proyecto 2: login de enlace, linked servers, distribuidor,
-│                                    # fragmentación vertical y horizontal, secuencias y verificación
+│                                    # fragmentación vertical y horizontal, secuencias, usuarios
+│                                    # con contraseña cifrada y verificación
 ├── Docker/                          # Proyecto 2: docker-compose.yml, levantar.ps1 y verificar.ps1
 ├── Api/                             # Servicio API
 │   ├── index.js                     # Servidor Express y registro de rutas
@@ -296,7 +335,10 @@ Cada nodo es un contenedor con una tecnología distinta:
 | `limon` | 1443 | Ubuntu 20.04 | SQL Server 2019 |
 
 1. Copiar `WideWorldImporters-Full.bak` a `Docker/backup/`.
-2. Crear `Docker/.env` a partir de `Docker/.env.example` con la clave de `sa` (`SA_PASSWORD`) y la del login de enlace (`ENLACE_PASSWORD`). Ambas deben tener mayúsculas, minúsculas y números, y al menos 8 caracteres.
+2. Crear `Docker/.env` a partir de `Docker/.env.example` con:
+   - la clave de `sa` (`SA_PASSWORD`) y la del login de enlace (`ENLACE_PASSWORD`). Ambas deben tener mayúsculas, minúsculas y números, y al menos 8 caracteres;
+   - las dos frases que generan la llave de las contraseñas (`LLAVE_ORIGEN` y `LLAVE_IDENTIDAD`). No se deben cambiar después de levantar los nodos: las contraseñas ya cifradas solo se descifran con la llave original;
+   - la contraseña de los usuarios de ejemplo (`USUARIOS_PASSWORD`), de al menos 8 caracteres.
 3. Con Docker Desktop abierto, desde la carpeta `Docker`:
 
 ```powershell
@@ -315,8 +357,9 @@ El script hace, en orden:
 | 6 | `Script/distribuido/03_fragmentacion_vertical.sql` | Separa los datos sensibles de clientes, proveedores y personas (sección 2.2) y crea los sinónimos `Syn_*Sensible` |
 | 7 | `Script/distribuido/04_fragmentacion_horizontal.sql` | Reparte ventas, compras, movimientos y existencias entre San José y Limón, y los quita del corporativo (sección 2.1) |
 | 8 | `Script/distribuido/05_secuencias.sql` | Reinicia las secuencias de cada sucursal en su rango de IDs |
-| 9 | `Script/sql`, `Script/CRUD`, `Script/estadisticas` | Instala los sinónimos y procedimientos del Proyecto 1 en los tres nodos |
-| 10 | `verificar.ps1` | Muestra el estado de cada nodo |
+| 9 | `Script/distribuido/06_seguridad.sql` | Crea la tabla de usuarios, la llave de las contraseñas y los procedimientos de login en los tres nodos, y los usuarios de ejemplo en el corporativo (sección 7.1) |
+| 10 | `Script/sql`, `Script/CRUD`, `Script/estadisticas` | Instala los sinónimos y procedimientos del Proyecto 1 en los tres nodos |
+| 11 | `verificar.ps1` | Muestra el estado de cada nodo, incluidos los usuarios y si existe la llave |
 
 Los pasos 6 y 7 quedan registrados en la tabla `dbo.ControlFragmentacion` de cada base: si se vuelven a correr, no repiten el reparto.
 
