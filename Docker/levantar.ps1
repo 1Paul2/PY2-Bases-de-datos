@@ -1,7 +1,14 @@
-﻿$password = (Get-Content "$PSScriptRoot\.env" | Where-Object { $_ -match '^SA_PASSWORD=' }) -replace '^SA_PASSWORD=', ''
-if (-not $password) { throw 'Falta SA_PASSWORD en Docker\.env' }
-$enlace = (Get-Content "$PSScriptRoot\.env" | Where-Object { $_ -match '^ENLACE_PASSWORD=' }) -replace '^ENLACE_PASSWORD=', ''
-if (-not $enlace) { throw 'Falta ENLACE_PASSWORD en Docker\.env' }
+﻿function Read-Env($nombre) {
+    $valor = (Get-Content "$PSScriptRoot\.env" | Where-Object { $_ -match "^$nombre=" }) -replace "^$nombre=", ''
+    if (-not $valor) { throw "Falta $nombre en Docker\.env" }
+    $valor
+}
+
+$password = Read-Env 'SA_PASSWORD'
+$enlace = Read-Env 'ENLACE_PASSWORD'
+$llaveOrigen = Read-Env 'LLAVE_ORIGEN'
+$llaveIdentidad = Read-Env 'LLAVE_IDENTIDAD'
+$usuariosPassword = Read-Env 'USUARIOS_PASSWORD'
 if (-not (Test-Path "$PSScriptRoot\backup\WideWorldImporters-Full.bak")) { throw 'Falta backup\WideWorldImporters-Full.bak' }
 
 $nodos = [ordered]@{ corporativo = 'WWI_Corporativo'; sanjose = 'WWI_SanJose'; limon = 'WWI_Limon' }
@@ -58,6 +65,14 @@ foreach ($script in '03_fragmentacion_vertical.sql', '04_fragmentacion_horizonta
         Invoke-Sql $nodo @('-I', '-v', "NODO=$nodo", "BASE=$($nodos[$nodo])", '-i', "/tmp/$script") |
             Select-String -NotMatch 'Changed database context'
     }
+}
+
+foreach ($nodo in $nodos.Keys) {
+    Write-Host "== $nodo : usuarios y llaves de cifrado" -ForegroundColor Cyan
+    docker cp "$PSScriptRoot\..\Script\distribuido\06_seguridad.sql" "${nodo}:/tmp/06_seguridad.sql"
+    Invoke-Sql $nodo @('-I', '-v', "NODO=$nodo", "BASE=$($nodos[$nodo])", "SA_PASSWORD=$password",
+        "LLAVE_ORIGEN=$llaveOrigen", "LLAVE_IDENTIDAD=$llaveIdentidad", "USUARIOS_PASSWORD=$usuariosPassword",
+        '-i', '/tmp/06_seguridad.sql') | Select-String 'creada|creado|Usuarios en'
 }
 
 $carpetas = 'sql', 'CRUD/PRODUCTOS', 'CRUD/CLIENTES', 'CRUD/PROVEEDORES', 'CRUD/VENTAS', 'estadisticas'
