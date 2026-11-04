@@ -4,10 +4,10 @@ DECLARE @nodo sysname = N'$(NODO)';
 DECLARE @clave nvarchar(128) = N'$(ENLACE_PASSWORD)';
 DECLARE @destinos TABLE (nombre sysname, servidor sysname);
 
-IF @nodo = N'corporativo'
-    INSERT INTO @destinos VALUES (N'LS_SANJOSE', N'sanjose'), (N'LS_LIMON', N'limon');
-ELSE
-    INSERT INTO @destinos VALUES (N'LS_CORPORATIVO', N'corporativo');
+INSERT INTO @destinos
+SELECT nombre, servidor
+FROM (VALUES (N'LS_CORPORATIVO', N'corporativo'), (N'LS_SANJOSE', N'sanjose'), (N'LS_LIMON', N'limon')) v(nombre, servidor)
+WHERE servidor <> @nodo;
 
 DECLARE @nombre sysname, @servidor sysname;
 DECLARE c CURSOR LOCAL FAST_FORWARD FOR SELECT nombre, servidor FROM @destinos;

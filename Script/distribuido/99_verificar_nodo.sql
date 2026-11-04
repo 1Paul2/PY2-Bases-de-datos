@@ -33,6 +33,34 @@ IF @base IS NOT NULL
         EXEC (N''DECLARE @u int = (SELECT COUNT(*) FROM Seguridad.Usuarios);
               PRINT CONCAT(''''  Usuarios  : '''', @u, '''' (llave de contrasenas: '''', CASE WHEN KEY_ID(N''''LlaveUsuarios'''') IS NULL THEN N''''no'''' ELSE N''''si'''' END, '''')'''');'');');
 
+IF @base IS NOT NULL
+    EXEC (N'USE ' + @base + N';
+    DECLARE @r nvarchar(max);
+    IF OBJECT_ID(N''dbo.sysmergepublications'') IS NOT NULL AND OBJECT_ID(N''Sales.CustomersSensible'') IS NOT NULL
+    BEGIN
+        EXEC sp_executesql N''SELECT @r = STRING_AGG(CAST(t AS nvarchar(max)), N'''', '''') FROM (
+            SELECT p.name + N'''' (merge, '''' + CAST(COUNT(s.subid) AS nvarchar(10)) + N'''' suscripciones)'''' t
+            FROM dbo.sysmergepublications p
+            LEFT JOIN dbo.sysmergesubscriptions s ON s.pubid = p.pubid AND s.subscriber_server <> @@SERVERNAME AND s.status = 1
+            GROUP BY p.name
+            UNION ALL
+            SELECT p.name + N'''' (transaccional, '''' + CAST(COUNT(DISTINCT s.srvname) AS nvarchar(10)) + N'''' suscripciones)''''
+            FROM dbo.syspublications p
+            LEFT JOIN dbo.sysarticles a ON a.pubid = p.pubid
+            LEFT JOIN dbo.syssubscriptions s ON s.artid = a.artid AND s.status = 2 AND s.srvid >= 0
+            GROUP BY p.name) x;'', N''@r nvarchar(max) OUTPUT'', @r OUTPUT;
+        PRINT CONCAT(''  Publica   : '', ISNULL(@r, N''ninguna''));
+    END
+    ELSE IF OBJECT_ID(N''Sales.CustomersSensible'') IS NULL
+    BEGIN
+        DECLARE @merge int = (SELECT COUNT(*) FROM sys.triggers WHERE parent_id = OBJECT_ID(N''Warehouse.StockItems'') AND name LIKE N''MSmerge%'');
+        DECLARE @tran int = 0;
+        IF OBJECT_ID(N''dbo.MSreplication_subscriptions'') IS NOT NULL
+            EXEC sp_executesql N''SELECT @n = COUNT(*) FROM dbo.MSreplication_subscriptions;'', N''@n int OUTPUT'', @tran OUTPUT;
+        PRINT CONCAT(''  Recibe    : catalogo por merge '', CASE WHEN @merge > 0 THEN N''(activo)'' ELSE N''(sin suscribir)'' END,
+                     '', '', @tran, '' publicaciones transaccionales'');
+    END');
+
 DECLARE @ls sysname, @inicio datetime2, @ms int;
 DECLARE c CURSOR LOCAL FAST_FORWARD FOR
     SELECT name FROM sys.servers WHERE is_linked = 1 AND name LIKE N'LS[_]%' ORDER BY name;
