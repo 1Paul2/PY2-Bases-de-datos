@@ -81,7 +81,8 @@ BEGIN
             MarketingComments = @MarketingComments,
             Barcode = @Barcode,
             InternalComments = @InternalComments,
-            LastEditedBy = @LastEditedBy
+            LastEditedBy = @LastEditedBy,
+            LastEditedWhen = SYSDATETIME()
         WHERE StockItemID = @StockItemID;
 
         IF EXISTS (SELECT 1 FROM Syn_StockItemHoldings WHERE StockItemID = @StockItemID)
