@@ -159,17 +159,44 @@ Las tres sucursales tienen el mismo catálogo, así que estas tablas están comp
 
 ### 4. Replicación
 
-| Qué | Tipo | Publicador | Suscriptores | Por qué |
-|-----|------|------------|--------------|---------|
-| Catálogo de productos | **Merge** | Corporativo | San José, Limón | Se modifica desde cualquier nodo; merge sincroniza en ambos sentidos y detecta los conflictos (ver concurrencia) |
-| Clientes, proveedores y personas (públicos) y usuarios | **Transaccional** | Corporativo | San José, Limón | Solo cambian en el corporativo; la transaccional los envía casi en tiempo real |
-| Listas de referencia | **Snapshot** (o quedan de la restauración) | Corporativo | San José, Limón | Casi no cambian |
+Implementada en `Script/distribuido/07_preparar_replicacion.sql` y `08_replicacion.sql`. El corporativo es el publicador y el **distribuidor**; las suscripciones son *push*, así que todos los agentes corren en el corporativo.
 
-El corporativo es también el **distribuidor**. Si una sucursal no responde, sus cambios esperan en cola y se sincronizan cuando vuelve.
+| Publicación | Tipo | Tablas | Cómo se suscribe | Frecuencia | Por qué |
+|-------------|------|--------|------------------|------------|---------|
+| `PubCatalogo` | **Merge** | `Warehouse.StockItems`, `StockGroups`, `StockItemStockGroups`, `Colors`, `PackageTypes` | Sin snapshot (`@sync_type = 'none'`) | Cada minuto | Se modifica desde cualquier nodo; merge sincroniza en ambos sentidos y resuelve los conflictos |
+| `PubDatos` | **Transaccional** | `Sales.Customers`, `Purchasing.Suppliers`, `Application.People` (fragmento público) | Sin snapshot (`replication support only`) | Continua | Solo cambian en el corporativo; la transaccional los envía en segundos |
+| `PubUsuarios` | **Transaccional** | `Seguridad.Usuarios` | Con snapshot | Continua | En las sucursales la tabla empieza vacía y nada la referencia |
 
-**Concurrencia:** si dos sucursales modifican el mismo producto antes de sincronizar, **gana el cambio más reciente**. Se usa el resolvedor de merge *DATETIME (Later Wins)* sobre una columna `LastEditedWhen` que los procedimientos de productos actualizan en cada cambio. El cambio que pierde queda registrado en el visor de conflictos de la replicación. Se eligió así porque ninguna sucursal tiene más autoridad que otra sobre el catálogo, y "gana el último" es la regla más fácil de explicar y de mostrar en la revisión.
+Las listas de referencia (ciudades, métodos de entrega, categorías...) no se publican: quedan iguales en los tres nodos desde la restauración y la aplicación no las modifica.
 
-Dentro de un mismo nodo, los procedimientos de productos usan transacciones y comparan una columna `rowversion` antes de guardar. Si otro usuario cambió el producto mientras tanto, el procedimiento rechaza el cambio y pide volver a cargarlo, en vez de pisarlo.
+**Por qué sin snapshot:** el snapshot borra y vuelve a crear las tablas en el suscriptor, y en las sucursales `StockItems`, `Customers` y `People` no se pueden borrar porque las facturas, pedidos y existencias las referencian. Como las tres bases salen del mismo `.bak`, esos datos ya son idénticos (se comprobó con checksums). Antes de suscribir, el script:
+
+1. Desactiva el historial (tablas temporales) de las 7 tablas publicadas, porque la replicación no las acepta (error 13570). `ValidFrom` y `ValidTo` quedan como columnas normales con valor por defecto; las tablas `*_Archive` se conservan como historial anterior.
+2. Agrega a las 5 tablas del catálogo la columna `rowguid` que usa merge: el corporativo la genera y cada sucursal copia los mismos valores por `LS_CORPORATIVO`.
+3. Copia a las sucursales las filas que solo existen en el corporativo (la persona `PagWeb`).
+4. Ejecuta la primera sincronización merge, que crea en cada sucursal los triggers que registran sus cambios. `levantar.ps1` espera a que termine.
+
+**Login de los agentes:** `wwi_replicacion`, dueño de las bases WWI y de `distribution`, con permiso de solo lectura `VIEW SERVER STATE` (lo pide el agente de snapshot). No es administrador del servidor.
+
+**Concurrencia:** si dos sucursales modifican el mismo producto antes de sincronizar, **gana el cambio más reciente**. Se usa el resolvedor de merge *DATETIME (Later Wins)* sobre la columna `LastEditedWhen`, que `SP_UpdateStockItem` actualiza en cada cambio. El cambio que pierde queda registrado en `MSmerge_conflicts_info` del corporativo. Se eligió así porque ninguna sucursal tiene más autoridad que otra sobre el catálogo, y "gana el último" es la regla más fácil de explicar y de mostrar en la revisión.
+
+**Borrar un producto replicado:** `SP_DeleteStockItem` revisa antes, por linked server, que el producto no tenga ventas, pedidos, compras, movimientos ni existencias en la otra sucursal; si la tiene o la sucursal no responde, no lo borra. Sin esta revisión, el borrado llegaría a la otra sucursal, fallaría por sus FK y los nodos quedarían distintos. Las existencias son locales: en las sucursales su FK hacia `StockItems` es `ON DELETE CASCADE`, para que una fila en 0 no bloquee el borrado replicado.
+
+**Comprobado en los contenedores:**
+
+| Prueba | Resultado |
+|--------|-----------|
+| Producto creado y editado en San José | Llega al corporativo en el mismo ciclo y a Limón en el siguiente (≤ 2 min) |
+| San José y Limón editan el mismo producto (Limón 5 s después) | Los tres nodos quedan con el cambio de Limón; el conflicto queda registrado |
+| Cliente editado en el corporativo | Llega a las dos sucursales en menos de 15 s |
+| `admin.sj` inicia sesión en San José | Funciona con la copia replicada y la contraseña cifrada |
+| Borrar en San José un producto con ventas, o en Limón uno que San José tiene en bodega | Rechazado con mensaje claro |
+| Limón apagado mientras San José y el corporativo hacen cambios | Al encenderlo recibe todos los cambios |
+| Corporativo apagado | San José sigue vendiendo, editando productos, listando clientes e iniciando sesión; al volver, los cambios llegan al corporativo y a Limón. El detalle de cliente falla (sus datos de contacto están en el corporativo) |
+
+**Limitación:** el corporativo es el centro de la replicación. Mientras está caído, San José y Limón no intercambian cambios del catálogo (los guardan y se envían cuando vuelve). Si estuviera caído más de 14 días (retención de la publicación merge), habría que reinicializar las suscripciones.
+
+Dentro de un mismo nodo, los procedimientos de productos usan transacciones; el control optimista con `rowversion` (rechazar un cambio si otro usuario modificó el producto mientras tanto) queda para el bloque de concurrencia y fallas.
 
 **Estadísticas consolidadas:** las vistas indexadas no pueden leer de otro servidor, así que el corporativo guarda **tablas de resumen** con una columna `Sucursal`. Un job del SQL Server Agent las llena desde las sucursales por linked server. Los procedimientos de estadísticas reciben el parámetro `Sucursal` (San José, Limón o consolidado).
 
@@ -179,7 +206,9 @@ Dentro de un mismo nodo, los procedimientos de productos usan transacciones y co
 |----------|--------|
 | Bases | `WWI_Corporativo`, `WWI_SanJose`, `WWI_Limon` |
 | Servidores (contenedores) | `corporativo`, `sanjose`, `limon` |
-| Linked servers en el corporativo | `LS_SANJOSE`, `LS_LIMON` |
+| Linked servers (cada nodo ve a los otros dos) | `LS_CORPORATIVO`, `LS_SANJOSE`, `LS_LIMON` |
+| Publicaciones | `PubCatalogo` (merge), `PubDatos` y `PubUsuarios` (transaccionales) |
+| Logins técnicos | `wwi_enlace` (linked servers), `wwi_replicacion` (agentes de replicación) |
 | Columna de sucursal en los resúmenes | `Sucursal` con los valores `SJ` y `LI` |
 | Tabla de usuarios (corporativo) | `Seguridad.Usuarios` |
 | Llave y certificado de las contraseñas | `LlaveUsuarios` (AES 256), `CertUsuarios` |
@@ -187,7 +216,7 @@ Dentro de un mismo nodo, los procedimientos de productos usan transacciones y co
 
 ### 6. Riesgos a revisar en los bloques siguientes
 
-- `StockItems`, `Customers`, `Suppliers` y `People` son **tablas temporales** (tienen historial con `ValidFrom` y `ValidTo`). La replicación no las acepta así, así que hay que desactivar el historial antes de publicarlas.
+- `StockItems`, `Customers`, `Suppliers` y `People` eran **tablas temporales** y la replicación no las acepta. Resuelto en `07_preparar_replicacion.sql`: se desactiva el historial de las tablas publicadas (sección 4).
 - Si el corporativo no responde, el detalle de cliente y de proveedor en las sucursales falla, porque sus datos de contacto viven allá. Se resuelve en el bloque de fallas.
 - La tabla de usuarios se replica con la contraseña ya encriptada, así que la llave simétrica debe crearse igual en los tres nodos (mismo `KEY_SOURCE` e `IDENTITY_VALUE`). Resuelto en `06_seguridad.sql` (sección 7.1).
 
@@ -352,18 +381,20 @@ El script hace, en orden:
 | 1 | `docker-compose.yml` | Levanta los tres contenedores con SQL Server Agent activo y la zona horaria de Costa Rica |
 | 2 | — | Restaura la base en cada nodo (`WWI_Corporativo`, `WWI_SanJose`, `WWI_Limon`) |
 | 3 | `Script/distribuido/00_login_enlace.sql` | Crea el login `wwi_enlace` en cada nodo, sin permisos de administrador: solo lee, escribe y ejecuta procedimientos en su base. Desactiva la política de seguridad por filas de ejemplo de WWI, que ocultaba los clientes a todo usuario que no fuera dueño de la base |
-| 4 | `Script/distribuido/01_linked_servers.sql` | Crea los linked servers (`LS_SANJOSE` y `LS_LIMON` en el corporativo, `LS_CORPORATIVO` en cada sucursal), que se conectan como `wwi_enlace`. Tienen tiempo de espera de 5 s para conectar y 30 s por consulta, para que un nodo caído responda con error en vez de bloquear |
+| 4 | `Script/distribuido/01_linked_servers.sql` | Crea los linked servers: cada nodo ve a los otros dos (`LS_CORPORATIVO`, `LS_SANJOSE`, `LS_LIMON`), así las sucursales también se consultan entre sí sin depender del corporativo. Se conectan como `wwi_enlace`. Tienen tiempo de espera de 5 s para conectar y 30 s por consulta, para que un nodo caído responda con error en vez de bloquear |
 | 5 | `Script/distribuido/02_distribuidor.sql` | Configura el corporativo como distribuidor de la replicación, con la master key en `distribution` que Microsoft pide antes de replicar |
 | 6 | `Script/distribuido/03_fragmentacion_vertical.sql` | Separa los datos sensibles de clientes, proveedores y personas (sección 2.2) y crea los sinónimos `Syn_*Sensible` |
 | 7 | `Script/distribuido/04_fragmentacion_horizontal.sql` | Reparte ventas, compras, movimientos y existencias entre San José y Limón, y los quita del corporativo (sección 2.1) |
 | 8 | `Script/distribuido/05_secuencias.sql` | Reinicia las secuencias de cada sucursal en su rango de IDs |
 | 9 | `Script/distribuido/06_seguridad.sql` | Crea la tabla de usuarios, la llave de las contraseñas y los procedimientos de login en los tres nodos, y los usuarios de ejemplo en el corporativo (sección 7.1) |
-| 10 | `Script/sql`, `Script/CRUD`, `Script/estadisticas` | Instala los sinónimos y procedimientos del Proyecto 1 en los tres nodos |
-| 11 | `verificar.ps1` | Muestra el estado de cada nodo, incluidos los usuarios y si existe la llave |
+| 10 | `Script/distribuido/07_preparar_replicacion.sql` | Crea el login `wwi_replicacion`, desactiva el historial de las tablas a replicar, agrega `LastEditedWhen` y las columnas `rowguid` de merge (sección 4) |
+| 11 | `Script/sql`, `Script/CRUD`, `Script/estadisticas` | Instala los sinónimos y procedimientos del Proyecto 1 en los tres nodos |
+| 12 | `Script/distribuido/08_replicacion.sql` | En las sucursales alinea los datos con el corporativo; en el corporativo crea las publicaciones `PubCatalogo`, `PubDatos` y `PubUsuarios` y sus suscripciones, y espera la primera sincronización |
+| 13 | `verificar.ps1` | Muestra el estado de cada nodo, incluidos los usuarios, la llave y la replicación |
 
-Los pasos 6 y 7 quedan registrados en la tabla `dbo.ControlFragmentacion` de cada base: si se vuelven a correr, no repiten el reparto.
+Los pasos 6, 7 y 10 quedan registrados en la tabla `dbo.ControlFragmentacion` de cada base, y el 12 revisa qué publicaciones y suscripciones ya existen: si se vuelven a correr, no repiten nada.
 
-Se puede correr de nuevo sin perder datos. Docker necesita unos 6 GB de memoria libres para los tres nodos.
+Se puede correr de nuevo sin perder datos. Los límites de memoria suman 7 GB (corporativo 3 GB, porque además es el distribuidor y ahí corren todos los agentes; cada sucursal 2 GB); en uso real los tres nodos rondan 4.5 GB.
 
 #### Comandos útiles
 
@@ -371,7 +402,7 @@ Se puede correr de nuevo sin perder datos. Docker necesita unos 6 GB de memoria 
 |------|--------------------------|
 | Ver el estado del sistema distribuido (sistema operativo, motor, Agent, bases y si los linked servers responden) | `.\verificar.ps1` |
 | Simular la caída de una sucursal | `docker stop limon` y luego `.\verificar.ps1`: el corporativo muestra `LS_LIMON : NO RESPONDE` en unos 8 a 12 s |
-| Volver a encenderla | `docker start limon` |
+| Volver a encenderla | `docker start limon`: en uno o dos minutos recibe los cambios que se hicieron mientras estaba caída |
 | Apagar los tres nodos sin perder datos | `docker compose stop` |
 | Empezar desde cero (borra las bases) | `docker compose down -v` y luego `.\levantar.ps1` |
 
