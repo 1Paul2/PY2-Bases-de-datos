@@ -9,6 +9,7 @@ $enlace = Read-Env 'ENLACE_PASSWORD'
 $llaveOrigen = Read-Env 'LLAVE_ORIGEN'
 $llaveIdentidad = Read-Env 'LLAVE_IDENTIDAD'
 $usuariosPassword = Read-Env 'USUARIOS_PASSWORD'
+$replicacion = Read-Env 'REPLICACION_PASSWORD'
 if (-not (Test-Path "$PSScriptRoot\backup\WideWorldImporters-Full.bak")) { throw 'Falta backup\WideWorldImporters-Full.bak' }
 
 $nodos = [ordered]@{ corporativo = 'WWI_Corporativo'; sanjose = 'WWI_SanJose'; limon = 'WWI_Limon' }
@@ -75,6 +76,13 @@ foreach ($nodo in $nodos.Keys) {
         '-i', '/tmp/06_seguridad.sql') | Select-String 'creada|creado|Usuarios en'
 }
 
+foreach ($nodo in $nodos.Keys) {
+    Write-Host "== $nodo : preparar la replicacion" -ForegroundColor Cyan
+    docker cp "$PSScriptRoot\..\Script\distribuido\07_preparar_replicacion.sql" "${nodo}:/tmp/07_preparar_replicacion.sql"
+    Invoke-Sql $nodo @('-I', '-v', "NODO=$nodo", "BASE=$($nodos[$nodo])", "REPLICACION_PASSWORD=$replicacion",
+        '-i', '/tmp/07_preparar_replicacion.sql') | Select-String -NotMatch 'Changed database context'
+}
+
 $carpetas = 'sql', 'CRUD/PRODUCTOS', 'CRUD/CLIENTES', 'CRUD/PROVEEDORES', 'CRUD/VENTAS', 'estadisticas'
 foreach ($nodo in $nodos.Keys) {
     Write-Host "== $nodo : procedimientos del Proyecto 1" -ForegroundColor Cyan
@@ -88,6 +96,26 @@ foreach ($nodo in $nodos.Keys) {
         }
     }
     Write-Host "$total scripts instalados"
+}
+
+foreach ($nodo in 'sanjose', 'limon', 'corporativo') {
+    Write-Host "== $nodo : replicacion" -ForegroundColor Cyan
+    docker cp "$PSScriptRoot\..\Script\distribuido\08_replicacion.sql" "${nodo}:/tmp/08_replicacion.sql"
+    Invoke-Sql $nodo @('-I', '-v', "NODO=$nodo", "BASE=$($nodos[$nodo])", "REPLICACION_PASSWORD=$replicacion",
+        '-i', '/tmp/08_replicacion.sql') | Select-String -NotMatch 'Changed database context|DBCC|WARNING: The database|^\s*$'
+}
+
+Write-Host '== Esperando la primera sincronizacion' -ForegroundColor Cyan
+$usuarios = (Invoke-Sql corporativo @('-h', '-1', '-d', 'WWI_Corporativo', '-Q', 'SET NOCOUNT ON; SELECT COUNT(*) FROM Seguridad.Usuarios') | Select-Object -First 1).ToString().Trim()
+foreach ($nodo in 'sanjose', 'limon') {
+    $consulta = "SET NOCOUNT ON; SELECT CAST((SELECT COUNT(*) FROM sys.triggers WHERE parent_id = OBJECT_ID('Warehouse.StockItems') AND name LIKE 'MSmerge%') AS varchar) + ' ' + CAST((SELECT COUNT(*) FROM Seguridad.Usuarios) AS varchar)"
+    for ($i = 0; $i -lt 36; $i++) {
+        $estado = (Invoke-Sql $nodo @('-h', '-1', '-d', $nodos[$nodo], '-Q', $consulta) | Select-Object -First 1).ToString().Trim() -split ' '
+        if ([int]$estado[0] -gt 0 -and $estado[1] -eq $usuarios) { break }
+        Start-Sleep 5
+    }
+    if ([int]$estado[0] -gt 0 -and $estado[1] -eq $usuarios) { Write-Host "$nodo sincronizado (catalogo y $usuarios usuarios)" }
+    else { Write-Host "$nodo todavia no termina la primera sincronizacion; revisar con verificar.ps1" -ForegroundColor Yellow }
 }
 
 Write-Host '== Verificacion' -ForegroundColor Green
