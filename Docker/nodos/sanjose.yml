@@ -1,0 +1,38 @@
+# Sucursal San José — Red Hat Enterprise Linux 9 + SQL Server 2022
+# Proyecto propio: Docker lo trata como un nodo independiente, con su IP fija en la red wwi-net.
+name: wwi-sanjose
+
+services:
+  sanjose:
+    image: mcr.microsoft.com/mssql/rhel/server:2022-latest
+    container_name: sanjose
+    hostname: sanjose
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: ${SA_PASSWORD}
+      MSSQL_PID: Developer
+      MSSQL_AGENT_ENABLED: "true"
+      MSSQL_MEMORY_LIMIT_MB: "2048"
+      TZ: America/Costa_Rica
+    healthcheck:
+      test: ["CMD-SHELL", "for s in /opt/mssql-tools18/bin/sqlcmd /opt/mssql-tools/bin/sqlcmd; do [ -x $$s ] && exec $$s -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -Q \"SELECT 1\" -b -o /dev/null; done; exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    ports: ["1442:1433"]
+    networks:
+      wwi-net:
+        ipv4_address: 172.30.0.11
+    volumes:
+      - datos:/var/opt/mssql
+      - ./backup:/var/opt/mssql/backup:ro
+
+networks:
+  wwi-net:
+    external: true
+
+volumes:
+  datos:
+    name: pry2-bases-2_sanjose-data

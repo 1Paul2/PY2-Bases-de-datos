@@ -24,9 +24,20 @@ function Invoke-Sql($nodo, [string[]]$sqlArgs) {
     $salida
 }
 
-Write-Host '== Levantando contenedores' -ForegroundColor Cyan
-docker compose --project-directory "$PSScriptRoot" up -d --wait
-if ($LASTEXITCODE -ne 0) { throw 'docker compose up fallo' }
+$redSubnet = '172.30.0.0/24'
+Write-Host '== Red wwi-net' -ForegroundColor Cyan
+# Los contenedores del esquema anterior (un solo proyecto con los tres nodos) se quitan; sus volúmenes se conservan
+if (docker ps -a --filter label=com.docker.compose.project=pry2-bases-2 -q) { docker compose -p pry2-bases-2 down }
+$subnet = docker network inspect wwi-net -f '{{range .IPAM.Config}}{{.Subnet}}{{end}}' 2>$null
+if ($subnet -and $subnet -ne $redSubnet) { docker network rm wwi-net | Out-Null; $subnet = $null }
+if (-not $subnet) { docker network create --subnet $redSubnet wwi-net | Out-Null }
+Write-Host "wwi-net ($redSubnet)"
+
+foreach ($nodo in $nodos.Keys) {
+    Write-Host "== Levantando $nodo" -ForegroundColor Cyan
+    docker compose --project-directory "$PSScriptRoot" --env-file "$PSScriptRoot\.env" -f "$PSScriptRoot\nodos\$nodo.yml" up -d --wait
+    if ($LASTEXITCODE -ne 0) { throw "docker compose up fallo en $nodo" }
+}
 
 docker exec -u root corporativo bash -c 'mkdir -p /var/opt/mssql/repldata && chown mssql /var/opt/mssql/repldata'
 
