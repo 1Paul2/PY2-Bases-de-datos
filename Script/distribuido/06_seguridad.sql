@@ -1,10 +1,16 @@
 SET NOCOUNT ON;
+-- Trabajar sobre la base del nodo
 USE [$(BASE)];
 GO
 
-IF SCHEMA_ID(N'Seguridad') IS NULL
-    EXEC (N'CREATE SCHEMA Seguridad');
+-- Se crea el esquema seguridad solo si no existe
+IF NOT EXISTS (
+    SELECT 1 FROM sys.schemas
+    WHERE name = N'Seguridad')
+
+EXEC (N'CREATE SCHEMA Seguridad');
 GO
+
 
 -- Llaves para cifrar las contraseñas. La master key y el certificado son propios de cada nodo,
 -- pero la llave simétrica se crea con el mismo KEY_SOURCE e IDENTITY_VALUE en los tres:
@@ -12,17 +18,17 @@ GO
 IF NOT EXISTS (SELECT 1 FROM sys.symmetric_keys WHERE name = N'##MS_DatabaseMasterKey##')
 BEGIN
     CREATE MASTER KEY ENCRYPTION BY PASSWORD = N'$(SA_PASSWORD)';
-    PRINT 'Master key creada';
 END
 GO
 
+-- Se crea el certificado usuario 
 IF NOT EXISTS (SELECT 1 FROM sys.certificates WHERE name = N'CertUsuarios')
 BEGIN
     CREATE CERTIFICATE CertUsuarios WITH SUBJECT = N'Contrasenas de Seguridad.Usuarios';
-    PRINT 'Certificado CertUsuarios creado';
 END
 GO
 
+-- Se crea la llave usuario aqui 
 IF NOT EXISTS (SELECT 1 FROM sys.symmetric_keys WHERE name = N'LlaveUsuarios')
 BEGIN
     CREATE SYMMETRIC KEY LlaveUsuarios
@@ -30,7 +36,6 @@ BEGIN
              KEY_SOURCE = N'$(LLAVE_ORIGEN)',
              IDENTITY_VALUE = N'$(LLAVE_IDENTIDAD)'
         ENCRYPTION BY CERTIFICATE CertUsuarios;
-    PRINT 'Llave LlaveUsuarios creada';
 END
 GO
 
@@ -158,6 +163,5 @@ BEGIN
              N'Corporativo', NULL, N'corporativo@wideworldimporters.com';
 
     DECLARE @total int = (SELECT COUNT(*) FROM Seguridad.Usuarios);
-    PRINT CONCAT('Usuarios en el corporativo: ', @total);
 END
 GO
