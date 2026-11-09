@@ -43,6 +43,14 @@ sql() {
 filtrar()  { grep -E  "$1" || true; }
 excluir()  { grep -Ev "$1" || true; }
 
+titulo 'Docker'
+# docker info termina con 0 aunque el motor falle; docker version sí devuelve error
+if ! motor="$(docker version --format '{{.Server.Version}}' 2>/dev/null)" || [ -z "$motor" ]; then
+    echo 'El motor de Docker no responde. Abre Docker Desktop y espera a que diga "Engine running" (si sigue fallando, reinícialo) y vuelve a correr levantar.sh.' >&2
+    exit 1
+fi
+echo "Docker $motor"
+
 RED_SUBNET='172.30.0.0/24'
 
 titulo 'Red wwi-net'

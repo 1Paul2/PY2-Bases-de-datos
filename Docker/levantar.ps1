@@ -24,13 +24,24 @@ function Invoke-Sql($nodo, [string[]]$sqlArgs) {
     $salida
 }
 
+Write-Host '== Docker' -ForegroundColor Cyan
+# docker info termina con 0 aunque el motor falle; docker version sí devuelve error
+$motor = docker version --format '{{.Server.Version}}' 2>$null
+if ($LASTEXITCODE -ne 0 -or -not "$motor".Trim()) {
+    throw 'El motor de Docker no responde. Abre Docker Desktop y espera a que diga "Engine running" (si sigue fallando, reinícialo) y vuelve a correr levantar.ps1.'
+}
+Write-Host "Docker $motor"
+
 $redSubnet = '172.30.0.0/24'
 Write-Host '== Red wwi-net' -ForegroundColor Cyan
 # Los contenedores del esquema anterior (un solo proyecto con los tres nodos) se quitan; sus volúmenes se conservan
 if (docker ps -a --filter label=com.docker.compose.project=pry2-bases-2 -q) { docker compose -p pry2-bases-2 down }
 $subnet = docker network inspect wwi-net -f '{{range .IPAM.Config}}{{.Subnet}}{{end}}' 2>$null
 if ($subnet -and $subnet -ne $redSubnet) { docker network rm wwi-net | Out-Null; $subnet = $null }
-if (-not $subnet) { docker network create --subnet $redSubnet wwi-net | Out-Null }
+if (-not $subnet) {
+    docker network create --subnet $redSubnet wwi-net | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'No se pudo crear la red wwi-net' }
+}
 Write-Host "wwi-net ($redSubnet)"
 
 foreach ($nodo in $nodos.Keys) {
