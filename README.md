@@ -166,6 +166,7 @@ Implementada en `Script/distribuido/07_preparar_replicacion.sql` y `08_replicaci
 | `PubCatalogo` | **Merge** | `Warehouse.StockItems`, `StockGroups`, `StockItemStockGroups`, `Colors`, `PackageTypes` | Sin snapshot (`@sync_type = 'none'`) | Cada minuto | Se modifica desde cualquier nodo; merge sincroniza en ambos sentidos y resuelve los conflictos |
 | `PubDatos` | **Transaccional** | `Sales.Customers`, `Purchasing.Suppliers`, `Application.People` (fragmento público) | Sin snapshot (`replication support only`) | Continua | Solo cambian en el corporativo; la transaccional los envía en segundos |
 | `PubUsuarios` | **Transaccional** | `Seguridad.Usuarios` | Con snapshot | Continua | En las sucursales la tabla empieza vacía y nada la referencia |
+| `PubVentasSJ`, `PubVentasLI` | **Transaccional** (publica cada sucursal) | Facturas, líneas de factura, órdenes y líneas de compra, movimientos y existencias, solo con las columnas que usan las estadísticas | Con snapshot, hacia `Resumen.<Tabla>_SJ` / `_LI` del corporativo | Continua | El corporativo necesita las ventas de las sucursales para las estadísticas por sucursal y consolidadas (sección 4.1) |
 
 Las listas de referencia (ciudades, métodos de entrega, categorías...) no se publican: quedan iguales en los tres nodos desde la restauración y la aplicación no las modifica.
 
@@ -198,7 +199,24 @@ Las listas de referencia (ciudades, métodos de entrega, categorías...) no se p
 
 Dentro de un mismo nodo, los procedimientos de productos usan transacciones; el control optimista con `rowversion` (rechazar un cambio si otro usuario modificó el producto mientras tanto) queda para el bloque de concurrencia y fallas.
 
-**Estadísticas consolidadas:** las vistas indexadas no pueden leer de otro servidor, así que el corporativo guarda **tablas de resumen** con una columna `Sucursal`. Un job del SQL Server Agent las llena desde las sucursales por linked server. Los procedimientos de estadísticas reciben el parámetro `Sucursal` (San José, Limón o consolidado).
+#### 4.1 Ventas de las sucursales en el corporativo (`09_replicaciones_ventas.sql`, `10_vistas_resumen.sql`)
+
+El corporativo no guarda transacciones propias, pero sus estadísticas deben poder verse por sucursal o consolidadas. Para no consultar a las sucursales en cada estadística (lento, y falla si una sucursal no responde), cada sucursal **replica** al corporativo sus datos de ventas, compras, movimientos y existencias:
+
+| Sucursal | Publicación | Tablas en el corporativo |
+|----------|-------------|--------------------------|
+| San José | `PubVentasSJ` | `Resumen.Facturas_SJ`, `LineasFactura_SJ`, `Compras_SJ`, `LineasCompra_SJ`, `Movimientos_SJ`, `Existencias_SJ` |
+| Limón | `PubVentasLI` | Las mismas con sufijo `_LI` |
+
+- Las sucursales usan al corporativo como **distribuidor remoto**; los agentes corren en el corporativo con el login `wwi_replicacion`.
+- Solo viajan las columnas que usan las estadísticas (partición vertical); por ejemplo, `Facturas_SJ` tiene `InvoiceID`, `CustomerID`, `SalespersonPersonID`, `DeliveryMethodID` e `InvoiceDate`.
+- La suscripción usa **snapshot**: crea las tablas `Resumen.*` y copia los datos existentes en el orden correcto, así ninguna venta hecha durante la copia se pierde. En el corporativo nada referencia esas tablas, así que se pueden crear y borrar sin problema.
+- WWI trae un índice *columnstore* agrupado en `StockItemTransactions`, y la replicación no acepta esas tablas (error 35353). En las sucursales se reemplaza por la llave primaria agrupada.
+- Las vistas `Resumen.vFacturas`, `vLineasFactura`, `vCompras`, `vLineasCompra`, `vMovimientos` y `vExistencias` unen las tablas de las dos sucursales con una columna `Sucursal` (`SJ` o `LI`): una estadística filtra con `WHERE Sucursal = @Sucursal` o toma todo para el consolidado.
+
+**Comprobado:** el corporativo tiene exactamente las mismas filas que cada sucursal en las 12 tablas (por ejemplo, 35 134 facturas de San José y 35 376 de Limón; la vista consolida 70 510). Una venta nueva en San José llega al corporativo en menos de 15 s, con su línea y el cambio de existencias; al borrarla, también se borra allá.
+
+**Pendiente:** que los procedimientos de estadísticas lean de estas vistas y reciban el parámetro `@Sucursal` (San José, Limón o consolidado). Las vistas indexadas no admiten `UNION ALL`, así que la parte "materializada" son las tablas `Resumen.*`: copias físicas en el corporativo que la replicación mantiene al día.
 
 ### 5. Nombres
 
@@ -207,7 +225,8 @@ Dentro de un mismo nodo, los procedimientos de productos usan transacciones; el 
 | Bases | `WWI_Corporativo`, `WWI_SanJose`, `WWI_Limon` |
 | Servidores (contenedores) | `corporativo`, `sanjose`, `limon` |
 | Linked servers (cada nodo ve a los otros dos) | `LS_CORPORATIVO`, `LS_SANJOSE`, `LS_LIMON` |
-| Publicaciones | `PubCatalogo` (merge), `PubDatos` y `PubUsuarios` (transaccionales) |
+| Publicaciones | `PubCatalogo` (merge), `PubDatos` y `PubUsuarios` (transaccionales, del corporativo); `PubVentasSJ` y `PubVentasLI` (transaccionales, de cada sucursal) |
+| Esquema de las ventas de las sucursales en el corporativo | `Resumen` (tablas `<Tabla>_SJ` / `_LI`, vistas `v<Tabla>`) |
 | Logins técnicos | `wwi_enlace` (linked servers), `wwi_replicacion` (agentes de replicación) |
 | Columna de sucursal en los resúmenes | `Sucursal` con los valores `SJ` y `LI` |
 | Tabla de usuarios (corporativo) | `Seguridad.Usuarios` |
@@ -390,9 +409,11 @@ El script hace, en orden:
 | 10 | `Script/distribuido/07_preparar_replicacion.sql` | Crea el login `wwi_replicacion`, desactiva el historial de las tablas a replicar, agrega `LastEditedWhen` y las columnas `rowguid` de merge (sección 4) |
 | 11 | `Script/sql`, `Script/CRUD`, `Script/estadisticas` | Instala los sinónimos y procedimientos del Proyecto 1 en los tres nodos |
 | 12 | `Script/distribuido/08_replicacion.sql` | En las sucursales alinea los datos con el corporativo; en el corporativo crea las publicaciones `PubCatalogo`, `PubDatos` y `PubUsuarios` y sus suscripciones, y espera la primera sincronización |
-| 13 | `verificar.ps1` | Muestra el estado de cada nodo, incluidos los usuarios, la llave y la replicación |
+| 13 | `Script/distribuido/09_replicaciones_ventas.sql` | En el corporativo registra a las sucursales como publicadoras; en cada sucursal crea `PubVentasSJ` / `PubVentasLI` y la suscripción del corporativo, y espera a que lleguen las ventas (sección 4.1) |
+| 14 | `Script/distribuido/10_vistas_resumen.sql` | Crea en el corporativo las vistas `Resumen.v*` que unen las dos sucursales |
+| 15 | `verificar.ps1` | Muestra el estado de cada nodo, incluidos los usuarios, la llave, la replicación y las tablas `Resumen` |
 
-Los pasos 6, 7 y 10 quedan registrados en la tabla `dbo.ControlFragmentacion` de cada base, y el 12 revisa qué publicaciones y suscripciones ya existen: si se vuelven a correr, no repiten nada.
+Los pasos 6, 7 y 10 quedan registrados en la tabla `dbo.ControlFragmentacion` de cada base, y el 12 y el 13 revisan qué publicaciones y suscripciones ya existen: si se vuelven a correr, no repiten nada.
 
 Se puede correr de nuevo sin perder datos. Los límites de memoria suman 7 GB (corporativo 3 GB, porque además es el distribuidor y ahí corren todos los agentes; cada sucursal 2 GB); en uso real los tres nodos rondan 4.5 GB.
 
@@ -404,7 +425,7 @@ Se puede correr de nuevo sin perder datos. Los límites de memoria suman 7 GB (c
 | Simular la caída de una sucursal | `docker stop limon` y luego `.\verificar.ps1`: el corporativo muestra `LS_LIMON : NO RESPONDE` en unos 8 a 12 s |
 | Volver a encenderla | `docker start limon`: en uno o dos minutos recibe los cambios que se hicieron mientras estaba caída |
 | Apagar los tres nodos sin perder datos | `docker compose stop` |
-| Empezar desde cero (borra las bases) | `docker compose down -v` y luego `.\levantar.ps1` |
+| Empezar desde cero (borra las bases) | `docker rm -f corporativo sanjose limon`, luego `docker volume rm pry2-bases-2_corporativo-data pry2-bases-2_sanjose-data pry2-bases-2_limon-data` y luego `.\levantar.ps1` |
 
 ### Requisitos
 
