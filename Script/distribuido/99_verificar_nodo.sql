@@ -61,6 +61,23 @@ IF @base IS NOT NULL
                      '', '', @tran, '' publicaciones transaccionales'');
     END');
 
+IF @base IS NOT NULL
+    EXEC (N'USE ' + @base + N';
+    IF SCHEMA_ID(N''Resumen'') IS NOT NULL
+    BEGIN
+        DECLARE @tablas int = (SELECT COUNT(*) FROM sys.tables WHERE schema_id = SCHEMA_ID(N''Resumen''));
+        DECLARE @vistas int = (SELECT COUNT(*) FROM sys.views WHERE schema_id = SCHEMA_ID(N''Resumen''));
+        DECLARE @sj bigint = (SELECT SUM(rows) FROM sys.partitions WHERE object_id = OBJECT_ID(N''Resumen.Facturas_SJ'') AND index_id IN (0, 1));
+        DECLARE @li bigint = (SELECT SUM(rows) FROM sys.partitions WHERE object_id = OBJECT_ID(N''Resumen.Facturas_LI'') AND index_id IN (0, 1));
+        PRINT CONCAT(''  Resumen   : '', @tablas, '' tablas, '', @vistas, '' vistas, facturas SJ '', ISNULL(@sj, 0), '' / LI '', ISNULL(@li, 0));
+    END
+    IF OBJECT_ID(N''Sales.CustomersSensible'') IS NULL AND OBJECT_ID(N''dbo.syspublications'') IS NOT NULL
+    BEGIN
+        DECLARE @pubs nvarchar(max);
+        EXEC sp_executesql N''SELECT @p = STRING_AGG(name, N'''', '''') FROM dbo.syspublications;'', N''@p nvarchar(max) OUTPUT'', @pubs OUTPUT;
+        PRINT CONCAT(''  Publica   : '', ISNULL(@pubs, N''ninguna''), '' (hacia el corporativo)'');
+    END');
+
 DECLARE @ls sysname, @inicio datetime2, @ms int;
 DECLARE c CURSOR LOCAL FAST_FORWARD FOR
     SELECT name FROM sys.servers WHERE is_linked = 1 AND name LIKE N'LS[_]%' ORDER BY name;

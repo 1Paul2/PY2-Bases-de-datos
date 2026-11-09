@@ -140,5 +140,38 @@ foreach ($nodo in 'sanjose', 'limon') {
     else { Write-Host "$nodo todavia no termina la primera sincronizacion; revisar con verificar.ps1" -ForegroundColor Yellow }
 }
 
+# Ventas de las sucursales hacia el corporativo: el corporativo registra a las sucursales como publicadoras,
+# cada sucursal publica, y al final el corporativo genera el snapshot
+foreach ($nodo in 'corporativo', 'sanjose', 'limon', 'corporativo') {
+    Write-Host "== $nodo : replicacion de ventas al corporativo" -ForegroundColor Cyan
+    docker cp "$PSScriptRoot\..\Script\distribuido\09_replicaciones_ventas.sql" "${nodo}:/tmp/09_replicaciones_ventas.sql"
+    Invoke-Sql $nodo @('-I', '-v', "NODO=$nodo", "BASE=$($nodos[$nodo])", "SA_PASSWORD=$password", "REPLICACION_PASSWORD=$replicacion",
+        '-i', '/tmp/09_replicaciones_ventas.sql') | Select-String -NotMatch 'Changed database context|DBCC|WARNING: The database|^\s*$|ya estaba en Pub'
+}
+
+Write-Host '== Esperando las ventas en el corporativo' -ForegroundColor Cyan
+$facturas = @{}
+foreach ($nodo in 'sanjose', 'limon') {
+    $facturas[$nodo] = (Invoke-Sql $nodo @('-h', '-1', '-d', $nodos[$nodo], '-Q', 'SET NOCOUNT ON; SELECT COUNT(*) FROM Sales.Invoices') | Select-Object -First 1).ToString().Trim()
+}
+$consulta = "SET NOCOUNT ON; SELECT CAST((SELECT COUNT(*) FROM sys.tables WHERE schema_id = SCHEMA_ID('Resumen')) AS varchar) + ' ' + " +
+            "CAST(ISNULL((SELECT SUM(p.rows) FROM sys.partitions p WHERE p.object_id = OBJECT_ID('Resumen.Facturas_SJ') AND p.index_id IN (0,1)), -1) AS varchar) + ' ' + " +
+            "CAST(ISNULL((SELECT SUM(p.rows) FROM sys.partitions p WHERE p.object_id = OBJECT_ID('Resumen.Facturas_LI') AND p.index_id IN (0,1)), -1) AS varchar)"
+for ($i = 0; $i -lt 60; $i++) {
+    $estado = (Invoke-Sql corporativo @('-h', '-1', '-d', 'WWI_Corporativo', '-Q', $consulta) | Select-Object -First 1).ToString().Trim() -split ' '
+    if ($estado[0] -eq '12' -and $estado[1] -eq $facturas['sanjose'] -and $estado[2] -eq $facturas['limon']) { break }
+    Start-Sleep 5
+}
+if ($estado[0] -eq '12' -and $estado[1] -eq $facturas['sanjose'] -and $estado[2] -eq $facturas['limon']) {
+    Write-Host "Resumen listo: $($estado[1]) facturas de San Jose y $($estado[2]) de Limon"
+} else {
+    Write-Host 'El snapshot de las ventas todavia no termina; revisar con verificar.ps1 y volver a correr levantar.ps1' -ForegroundColor Yellow
+}
+
+Write-Host '== corporativo : vistas Resumen' -ForegroundColor Cyan
+docker cp "$PSScriptRoot\..\Script\distribuido\10_vistas_resumen.sql" corporativo:/tmp/10_vistas_resumen.sql
+Invoke-Sql corporativo @('-I', '-v', 'NODO=corporativo', 'BASE=WWI_Corporativo', '-i', '/tmp/10_vistas_resumen.sql') |
+    Select-String -NotMatch 'Changed database context|^\s*$'
+
 Write-Host '== Verificacion' -ForegroundColor Green
 & "$PSScriptRoot\verificar.ps1"

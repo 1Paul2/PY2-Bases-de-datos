@@ -44,6 +44,37 @@ GO
 
 --Corporativo
 
+-- Arranca los agentes de replicación (jobs del Agent) cuyo nombre cumple el patrón y que no estén corriendo.
+-- Si un agente ya corre por su horario, sp_start_job y sp_startpublication_snapshot fallan con un error
+-- del Agent que TRY/CATCH no atrapa, y levantar se detiene.
+CREATE OR ALTER PROCEDURE dbo.SP_IniciarAgentesReplicacion
+    @Patron NVARCHAR(256),
+    @Excluir NVARCHAR(256) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @job sysname;
+    DECLARE c CURSOR LOCAL FAST_FORWARD FOR
+        SELECT j.name FROM msdb.dbo.sysjobs j
+        WHERE j.name LIKE @Patron
+          AND (@Excluir IS NULL OR j.name NOT LIKE @Excluir)
+          AND NOT EXISTS (SELECT 1 FROM msdb.dbo.sysjobactivity a
+                          WHERE a.job_id = j.job_id
+                            AND a.session_id = (SELECT MAX(session_id) FROM msdb.dbo.syssessions)
+                            AND a.start_execution_date IS NOT NULL AND a.stop_execution_date IS NULL);
+    OPEN c;
+    FETCH NEXT FROM c INTO @job;
+    WHILE @@FETCH_STATUS = 0
+    BEGIN
+        EXEC msdb.dbo.sp_start_job @job_name = @job;
+        PRINT CONCAT('Agente iniciado: ', @job);
+        FETCH NEXT FROM c INTO @job;
+    END
+    CLOSE c;
+    DEALLOCATE c;
+END;
+GO
+
 IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = DB_NAME() AND is_merge_published = 1)
     EXEC sp_replicationdboption @dbname = N'$(BASE)', @optname = N'merge publish', @value = N'true';
 GO
@@ -77,12 +108,7 @@ GO
 
 IF (SELECT snapshot_ready FROM dbo.sysmergepublications WHERE name = N'PubCatalogo') = 0
 BEGIN
-    BEGIN TRY
-        EXEC sp_startpublication_snapshot @publication = N'PubCatalogo';
-    END TRY
-    BEGIN CATCH
-        PRINT 'El agente de snapshot ya estaba corriendo';
-    END CATCH
+    EXEC dbo.SP_IniciarAgentesReplicacion N'%-$(BASE)-PubCatalogo-[0-9]%';
     DECLARE @espera int = 0;
     WHILE (SELECT snapshot_ready FROM dbo.sysmergepublications WHERE name = N'PubCatalogo') = 0 AND @espera < 60
     BEGIN
@@ -190,34 +216,9 @@ CLOSE c;
 DEALLOCATE c;
 GO
 
-IF EXISTS (SELECT 1 FROM dbo.syspublications WHERE name = N'PubUsuarios')
-BEGIN
-    BEGIN TRY
-        EXEC sp_startpublication_snapshot @publication = N'PubUsuarios';
-    END TRY
-    BEGIN CATCH
-        PRINT 'El snapshot de PubUsuarios ya estaba corriendo';
-    END CATCH
-END
-GO
-
-DECLARE @job sysname;
-DECLARE c CURSOR LOCAL FAST_FORWARD FOR
-    SELECT name FROM msdb.dbo.sysjobs WHERE name LIKE N'%-$(BASE)-PubCatalogo-%' AND name NOT LIKE N'%-PubCatalogo-[0-9]%';
-OPEN c;
-FETCH NEXT FROM c INTO @job;
-WHILE @@FETCH_STATUS = 0
-BEGIN
-    BEGIN TRY
-        EXEC msdb.dbo.sp_start_job @job_name = @job;
-    END TRY
-    BEGIN CATCH
-        PRINT CONCAT('El agente ', @job, ' ya estaba corriendo');
-    END CATCH
-    FETCH NEXT FROM c INTO @job;
-END
-CLOSE c;
-DEALLOCATE c;
+-- Snapshot de usuarios (las sucursales lo necesitan para su primera copia) y primera sincronización merge
+EXEC dbo.SP_IniciarAgentesReplicacion N'%-$(BASE)-PubUsuarios-[0-9]%';
+EXEC dbo.SP_IniciarAgentesReplicacion N'%-$(BASE)-PubCatalogo-%', N'%-PubCatalogo-[0-9]%';
 PRINT 'Replicacion configurada en el corporativo';
 GO
 

@@ -2,15 +2,12 @@ SET NOCOUNT ON;
 USE [$(BASE)];
 GO
 
--- CORPORATIVO: registrar las sucursales como publicadores en el distribuidor
 IF N'$(NODO)' = N'corporativo'
 BEGIN
     DECLARE @sucursal sysname;
-    -- Define la lista que se va a recorrer.
     DECLARE c CURSOR LOCAL FAST_FORWARD FOR
         SELECT s FROM (VALUES (N'sanjose'), (N'limon')) v(s);
     OPEN c;
-    -- Lee la c para poder copia el nombre de la variable @sucursal
     FETCH NEXT FROM c INTO @sucursal;
     WHILE @@FETCH_STATUS = 0
     BEGIN
@@ -20,21 +17,17 @@ BEGIN
                 @publisher = @sucursal,
                 @distribution_db = N'distribution',
                 @working_directory = N'/var/opt/mssql/repldata',
-                -- El numero de acceso para la sucursal
                 @security_mode = 0,
-                @login = N'sa',
-                @password = N'$(SA_PASSWORD)';
+                @login = N'wwi_replicacion',
+                @password = N'$(REPLICACION_PASSWORD)';
             PRINT CONCAT(@sucursal, ' registrado como publicador');
         END
         ELSE
             PRINT CONCAT(@sucursal, ' ya estaba registrado como publicador');
-        -- Pasamos a la siguiente sucursal
         FETCH NEXT FROM c INTO @sucursal;
     END
     CLOSE c;
     DEALLOCATE c;
-
-    -- Esquema donde llegan las ventas y compras replicadas de las sucursales
     IF SCHEMA_ID(N'Resumen') IS NULL
         EXEC (N'CREATE SCHEMA Resumen');
 END
@@ -58,6 +51,15 @@ BEGIN
     ELSE
         PRINT 'La base ya estaba habilitada para publicar';
 
+    IF EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID(N'Warehouse.StockItemTransactions') AND type = 5)
+    BEGIN
+        DECLARE @ccx sysname = (SELECT name FROM sys.indexes WHERE object_id = OBJECT_ID(N'Warehouse.StockItemTransactions') AND type = 5);
+        DECLARE @pk sysname = (SELECT name FROM sys.key_constraints WHERE parent_object_id = OBJECT_ID(N'Warehouse.StockItemTransactions') AND type = 'PK');
+        EXEC (N'DROP INDEX ' + @ccx + N' ON Warehouse.StockItemTransactions;
+                ALTER TABLE Warehouse.StockItemTransactions DROP CONSTRAINT ' + @pk + N';
+                ALTER TABLE Warehouse.StockItemTransactions ADD CONSTRAINT ' + @pk + N' PRIMARY KEY CLUSTERED (StockItemTransactionID);');
+        PRINT 'StockItemTransactions: indice columnstore reemplazado por la llave primaria agrupada';
+    END
 END
 GO
 
@@ -69,7 +71,11 @@ BEGIN
         PRINT 'Agente lector del log creado';
     END TRY
     BEGIN CATCH
-        PRINT 'El agente ya existe';
+        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+        IF ERROR_NUMBER() = 21831
+            PRINT 'El agente lector del log ya existia';
+        ELSE
+            THROW;
     END CATCH
 END
 GO
@@ -90,6 +96,18 @@ BEGIN
     END
     ELSE
         PRINT CONCAT('La publicacion ', @pub, ' ya existia');
+
+    -- El snapshot crea las tablas Resumen.* en el corporativo y copia los datos que ya existen
+    BEGIN TRY
+        DECLARE @clave nvarchar(128) = N'$(REPLICACION_PASSWORD)';
+        EXEC sp_addpublication_snapshot @publication = @pub,
+            @publisher_security_mode = 0, @publisher_login = N'wwi_replicacion', @publisher_password = @clave;
+        PRINT CONCAT('Agente de snapshot de ', @pub, ' creado');
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+        IF ERROR_NUMBER() <> 14101 THROW;
+    END CATCH
 END
 GO
 
@@ -115,7 +133,9 @@ BEGIN
             (N'LineasCompra',  N'Purchasing', N'PurchaseOrderLines',
              N'PurchaseOrderLineID,PurchaseOrderID,StockItemID,OrderedOuters,ExpectedUnitPricePerOuter'),
             (N'Movimientos',   N'Warehouse',  N'StockItemTransactions',
-             N'StockItemTransactionID,StockItemID,TransactionTypeID,CustomerID,InvoiceID,SupplierID,PurchaseOrderID,TransactionOccurredWhen,Quantity')
+             N'StockItemTransactionID,StockItemID,TransactionTypeID,CustomerID,InvoiceID,SupplierID,PurchaseOrderID,TransactionOccurredWhen,Quantity'),
+            (N'Existencias',   N'Warehouse',  N'StockItemHoldings',
+             N'StockItemID,QuantityOnHand')
         ) v(a, e, t, cols);
     OPEN c;
     FETCH NEXT FROM c INTO @articulo, @esquema, @tabla, @columnas;
@@ -133,7 +153,7 @@ BEGIN
             EXEC sp_addarticle @publication = @pub, @article = @articulo,
                 @source_owner = @esquema, @source_object = @tabla,
                 @destination_owner = N'Resumen', @destination_table = @destino,
-                @vertical_partition = N'true', @pre_creation_cmd = N'none',
+                @vertical_partition = N'true', @pre_creation_cmd = N'drop',
                 @ins_cmd = @ins, @upd_cmd = @upd, @del_cmd = @del;
 
             -- Las columnas de la lista se agregan; las demás se quitan
@@ -151,8 +171,17 @@ BEGIN
             END
             CLOSE cc;
             DEALLOCATE cc;
+            EXEC sp_articleview @publication = @pub, @article = @articulo, @force_invalidate_snapshot = 1;
 
             PRINT CONCAT('Articulo ', @esquema, '.', @tabla, ' -> Resumen.', @destino);
+        END
+        ELSE IF EXISTS (SELECT 1 FROM dbo.sysarticles a JOIN dbo.syspublications p ON p.pubid = a.pubid
+                        WHERE p.name = @pub AND a.name = @articulo AND a.pre_creation_cmd <> 1)
+        BEGIN
+            EXEC sp_changearticle @publication = @pub, @article = @articulo,
+                @property = N'pre_creation_cmd', @value = N'drop', @force_invalidate_snapshot = 1;
+            EXEC sp_articleview @publication = @pub, @article = @articulo, @force_invalidate_snapshot = 1;
+            PRINT CONCAT('Articulo ', @articulo, ' cambiado para usar snapshot');
         END
         ELSE
             PRINT CONCAT('El articulo ', @articulo, ' ya estaba en ', @pub);
@@ -170,6 +199,16 @@ BEGIN
     DECLARE @pub sysname = CASE N'$(NODO)' WHEN N'sanjose' THEN N'PubVentasSJ' ELSE N'PubVentasLI' END;
     DECLARE @clave nvarchar(128) = N'$(REPLICACION_PASSWORD)';
 
+    IF EXISTS (SELECT 1 FROM dbo.syssubscriptions s
+               JOIN dbo.sysarticles a ON a.artid = s.artid
+               JOIN dbo.syspublications p ON p.pubid = a.pubid
+               WHERE p.name = @pub AND s.srvname = N'corporativo' AND (s.sync_type = 2 OR s.nosync_type <> 0))
+    BEGIN
+        EXEC sp_dropsubscription @publication = @pub, @article = N'all',
+            @subscriber = N'corporativo', @destination_db = N'WWI_Corporativo';
+        PRINT CONCAT('Suscripcion sin snapshot a ', @pub, ' eliminada para recrearla');
+    END
+
     IF NOT EXISTS (SELECT 1 FROM dbo.syssubscriptions s
                    JOIN dbo.sysarticles a ON a.artid = s.artid
                    JOIN dbo.syspublications p ON p.pubid = a.pubid
@@ -177,7 +216,7 @@ BEGIN
     BEGIN
         EXEC sp_addsubscription @publication = @pub, @subscriber = N'corporativo',
             @destination_db = N'WWI_Corporativo', @subscription_type = N'Push',
-            @sync_type = N'replication support only';
+            @sync_type = N'automatic';
         EXEC sp_addpushsubscription_agent @publication = @pub, @subscriber = N'corporativo',
             @subscriber_db = N'WWI_Corporativo',
             @subscriber_security_mode = 0, @subscriber_login = N'wwi_replicacion', @subscriber_password = @clave,
@@ -186,6 +225,17 @@ BEGIN
     END
     ELSE
         PRINT CONCAT('El corporativo ya estaba suscrito a ', @pub);
+END
+GO
+
+-- PASO 9 (corporativo, al final, después de las sucursales): genera el snapshot de las publicaciones de ventas.
+-- El snapshot que corre solo al crear el agente ocurre antes de que exista la suscripción y no sirve.
+-- Los agentes viven en el corporativo (distribuidor); dbo.SP_IniciarAgentesReplicacion (del 08) solo arranca
+-- los que no están corriendo.
+IF N'$(NODO)' = N'corporativo'
+BEGIN
+    EXEC dbo.SP_IniciarAgentesReplicacion N'%-PubVentasSJ-[0-9]%';
+    EXEC dbo.SP_IniciarAgentesReplicacion N'%-PubVentasLI-[0-9]%';
 END
 GO
 

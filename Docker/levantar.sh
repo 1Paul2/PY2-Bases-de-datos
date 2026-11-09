@@ -163,5 +163,33 @@ for nodo in sanjose limon; do
     else printf '\033[33m%s todavia no termina la primera sincronizacion; revisar con verificar.sh\033[0m\n' "$nodo"; fi
 done
 
+# Ventas de las sucursales hacia el corporativo: el corporativo registra a las sucursales como publicadoras,
+# cada sucursal publica, y al final el corporativo genera el snapshot
+for nodo in corporativo sanjose limon corporativo; do
+    titulo "$nodo : replicacion de ventas al corporativo"
+    docker cp "$SCRIPT/distribuido/09_replicaciones_ventas.sql" "$nodo:/tmp/09_replicaciones_ventas.sql" >/dev/null
+    sql "$nodo" -I -v "NODO=$nodo" "BASE=${BASE[$nodo]}" "SA_PASSWORD=$PASSWORD" "REPLICACION_PASSWORD=$REPLICACION" \
+        -i /tmp/09_replicaciones_ventas.sql | excluir 'Changed database context|DBCC|WARNING: The database|^\s*$|ya estaba en Pub'
+done
+
+titulo 'Esperando las ventas en el corporativo'
+fact_sj="$(sql sanjose -h -1 -d WWI_SanJose -Q 'SET NOCOUNT ON; SELECT COUNT(*) FROM Sales.Invoices' | head -1 | tr -d '[:space:]')"
+fact_li="$(sql limon -h -1 -d WWI_Limon -Q 'SET NOCOUNT ON; SELECT COUNT(*) FROM Sales.Invoices' | head -1 | tr -d '[:space:]')"
+consulta="SET NOCOUNT ON; SELECT CAST((SELECT COUNT(*) FROM sys.tables WHERE schema_id = SCHEMA_ID('Resumen')) AS varchar) + ' ' + \
+CAST(ISNULL((SELECT SUM(p.rows) FROM sys.partitions p WHERE p.object_id = OBJECT_ID('Resumen.Facturas_SJ') AND p.index_id IN (0,1)), -1) AS varchar) + ' ' + \
+CAST(ISNULL((SELECT SUM(p.rows) FROM sys.partitions p WHERE p.object_id = OBJECT_ID('Resumen.Facturas_LI') AND p.index_id IN (0,1)), -1) AS varchar)"
+ok=0
+for _ in $(seq 60); do
+    read -r tablas res_sj res_li < <(sql corporativo -h -1 -d WWI_Corporativo -Q "$consulta" | head -1)
+    if [ "$tablas" = 12 ] && [ "$res_sj" = "$fact_sj" ] && [ "$res_li" = "$fact_li" ]; then ok=1; break; fi
+    sleep 5
+done
+if [ $ok = 1 ]; then echo "Resumen listo: $res_sj facturas de San Jose y $res_li de Limon"
+else printf '\033[33m%s\033[0m\n' 'El snapshot de las ventas todavia no termina; revisar con verificar.sh y volver a correr levantar.sh'; fi
+
+titulo 'corporativo : vistas Resumen'
+docker cp "$SCRIPT/distribuido/10_vistas_resumen.sql" corporativo:/tmp/10_vistas_resumen.sql >/dev/null
+sql corporativo -I -v NODO=corporativo BASE=WWI_Corporativo -i /tmp/10_vistas_resumen.sql | excluir 'Changed database context|^\s*$'
+
 printf '\033[32m== Verificacion\033[0m\n'
 "$DIR/verificar.sh"
