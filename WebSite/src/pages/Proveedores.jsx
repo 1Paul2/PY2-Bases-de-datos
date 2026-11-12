@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { enviar, pedir, useCatalogo } from '../Api';
+import { puedeEditar } from '../permisos';
 import Filtros from '../components/Filtros';
 import Tabla from '../components/Tabla';
 import Paginacion from '../components/Paginacion';
@@ -243,6 +244,8 @@ export default function Proveedores() {
     }
   ];
 
+  const edita = puedeEditar('proveedores');
+
   return (
     <section className="modulo">
       <div className="modulo-header">
@@ -253,11 +256,13 @@ export default function Proveedores() {
             {total} {total === 1 ? 'resultado' : 'resultados'}
           </span>
         </div>
-        <div className="modulo-acciones">
-          <button type="button" className="btn btn-primario" onClick={abrirNuevo}>
-            + Nuevo proveedor
-          </button>
-        </div>
+        {edita && (
+          <div className="modulo-acciones">
+            <button type="button" className="btn btn-primario" onClick={abrirNuevo}>
+              + Nuevo proveedor
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="barra-filtros">
@@ -278,8 +283,12 @@ export default function Proveedores() {
           acciones={fila => (
             <div className="acciones-fila">
               <button type="button" onClick={e => { e.stopPropagation(); verDetalle(fila); }}>Ver detalles</button>
-              <button type="button" onClick={e => { e.stopPropagation(); abrirEdicion(fila); }}>Editar</button>
-              <button type="button" onClick={e => { e.stopPropagation(); eliminar(fila); }}>Eliminar</button>
+              {edita && (
+                <>
+                  <button type="button" onClick={e => { e.stopPropagation(); abrirEdicion(fila); }}>Editar</button>
+                  <button type="button" onClick={e => { e.stopPropagation(); eliminar(fila); }}>Eliminar</button>
+                </>
+              )}
             </div>
           )}
         />
