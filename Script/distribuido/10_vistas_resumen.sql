@@ -56,6 +56,20 @@ BEGIN
         SELECT CAST(''LI'' AS char(2)), StockItemID, QuantityOnHand
         FROM Resumen.Existencias_LI;');
 
+    -- Las estadísticas del corporativo leen las ventas de las dos sucursales
+    DROP SYNONYM IF EXISTS Syn_Invoices;
+    CREATE SYNONYM Syn_Invoices FOR Resumen.vFacturas;
+    DROP SYNONYM IF EXISTS Syn_InvoiceLines;
+    CREATE SYNONYM Syn_InvoiceLines FOR Resumen.vLineasFactura;
+    DROP SYNONYM IF EXISTS Syn_PurchaseOrders;
+    CREATE SYNONYM Syn_PurchaseOrders FOR Resumen.vCompras;
+    DROP SYNONYM IF EXISTS Syn_PurchaseOrderLines;
+    CREATE SYNONYM Syn_PurchaseOrderLines FOR Resumen.vLineasCompra;
+    DROP SYNONYM IF EXISTS Syn_StockItemTransactions;
+    CREATE SYNONYM Syn_StockItemTransactions FOR Resumen.vMovimientos;
+
     PRINT 'Vistas Resumen.v* listas';
 END
 GO
+
+
