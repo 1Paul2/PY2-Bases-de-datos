@@ -10,6 +10,7 @@ $llaveOrigen = Read-Env 'LLAVE_ORIGEN'
 $llaveIdentidad = Read-Env 'LLAVE_IDENTIDAD'
 $usuariosPassword = Read-Env 'USUARIOS_PASSWORD'
 $replicacion = Read-Env 'REPLICACION_PASSWORD'
+$appPassword = Read-Env 'APP_PASSWORD'
 if (-not (Test-Path "$PSScriptRoot\backup\WideWorldImporters-Full.bak")) { throw 'Falta backup\WideWorldImporters-Full.bak' }
 
 $nodos = [ordered]@{ corporativo = 'WWI_Corporativo'; sanjose = 'WWI_SanJose'; limon = 'WWI_Limon' }
@@ -189,6 +190,13 @@ if ($listos -eq '6') {
     Write-Host "$total estadisticas instaladas"
 }
 else { Write-Host 'Las vistas Resumen todavia no estan listas; las estadisticas se instalan al volver a correr levantar.ps1' -ForegroundColor Yellow }
+
+foreach ($nodo in $nodos.Keys) {
+    Write-Host "== $nodo : usuarios de la aplicacion" -ForegroundColor Cyan
+    docker cp "$PSScriptRoot\..\Script\distribuido\11_usuarios_bd.sql" "${nodo}:/tmp/11_usuarios_bd.sql"
+    Invoke-Sql $nodo @('-I', '-v', "NODO=$nodo", "BASE=$($nodos[$nodo])", "APP_PASSWORD=$appPassword",
+        '-i', '/tmp/11_usuarios_bd.sql') | Select-String -NotMatch 'Changed database context'
+}
 
 Write-Host '== Verificacion' -ForegroundColor Green
 & "$PSScriptRoot\verificar.ps1"

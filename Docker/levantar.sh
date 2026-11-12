@@ -20,6 +20,7 @@ LLAVE_ORIGEN="$(leer_env LLAVE_ORIGEN)"
 LLAVE_IDENTIDAD="$(leer_env LLAVE_IDENTIDAD)"
 USUARIOS_PASSWORD="$(leer_env USUARIOS_PASSWORD)"
 REPLICACION="$(leer_env REPLICACION_PASSWORD)"
+APP_PASSWORD="$(leer_env APP_PASSWORD)"
 [ -f "$DIR/backup/WideWorldImporters-Full.bak" ] || { echo "Falta backup/WideWorldImporters-Full.bak" >&2; exit 1; }
 
 NODOS=(corporativo sanjose limon)
@@ -208,6 +209,13 @@ if [ "$listos" = 6 ]; then
 else
     printf '\033[33m%s\033[0m\n' 'Las vistas Resumen todavia no estan listas; las estadisticas se instalan al volver a correr levantar.sh'
 fi
+
+for nodo in "${NODOS[@]}"; do
+    titulo "$nodo : usuarios de la aplicacion"
+    docker cp "$SCRIPT/distribuido/11_usuarios_bd.sql" "$nodo:/tmp/11_usuarios_bd.sql" >/dev/null
+    sql "$nodo" -I -v "NODO=$nodo" "BASE=${BASE[$nodo]}" "APP_PASSWORD=$APP_PASSWORD" \
+        -i /tmp/11_usuarios_bd.sql | excluir 'Changed database context'
+done
 
 printf '\033[32m== Verificacion\033[0m\n'
 "$DIR/verificar.sh"
