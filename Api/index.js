@@ -1,8 +1,14 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const { poolPromise } = require('./db');
-const inicializarBD = require('./init');   
+const { router: auth, autenticar } = require('./auth');
+
+for (const variable of ['APP_PASSWORD', 'JWT_SECRET']) {
+  if (!process.env[variable]) {
+    console.error(`Falta ${variable} en Api/.env`);
+    process.exit(1);
+  }
+}
 
 const app = express();
 app.use(cors());
@@ -10,15 +16,8 @@ app.use(express.json());
 
 app.get('/api/salud', (req, res) => res.json({ ok: true }));
 
-app.get('/api/prueba-db', async (req, res) => {
-  try {
-    const pool = await poolPromise;
-    const r = await pool.request().query('SELECT DB_NAME() AS base');
-    res.json(r.recordset);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+app.use('/api/auth', auth);
+app.use('/api', autenticar);
 
 app.use('/api/clientes', require('./routes/clientes'));
 app.use('/api/productos', require('./routes/productos'));
@@ -27,13 +26,5 @@ app.use('/api/ventas', require('./routes/ventas'));
 app.use('/api/estadisticas', require('./routes/estadisticas'));
 app.use('/api/catalogos', require('./routes/catalogos'));
 
-inicializarBD()
-  .then(() => {
-    app.listen(process.env.PORT, () =>
-      console.log(`API en http://localhost:${process.env.PORT}`)
-    );
-  })
-  .catch(err => {
-    console.error('Falló la inicialización:', err.message);
-    process.exit(1);
-  });
+const puerto = process.env.PORT || 3001;
+app.listen(puerto, () => console.log(`API en http://localhost:${puerto}`));
