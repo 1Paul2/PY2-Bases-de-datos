@@ -67,6 +67,8 @@ BEGIN
     CREATE SYNONYM Syn_PurchaseOrderLines FOR Resumen.vLineasCompra;
     DROP SYNONYM IF EXISTS Syn_StockItemTransactions;
     CREATE SYNONYM Syn_StockItemTransactions FOR Resumen.vMovimientos;
+    DROP SYNONYM IF EXISTS Syn_StockItemHoldings;
+    CREATE SYNONYM Syn_StockItemHoldings FOR Resumen.vExistencias;
 
     PRINT 'Vistas Resumen.v* listas';
 END
