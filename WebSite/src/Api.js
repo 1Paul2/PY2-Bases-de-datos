@@ -3,28 +3,65 @@ import { useEffect, useState } from 'react';
 // En desarrollo se usa el proxy de Vite (/api → localhost:3001); en la versión publicada, la API local
 export const API = import.meta.env.DEV ? '/api' : 'http://localhost:3001/api';
 
-export async function pedir(ruta) {
-  const r = await fetch(`${API}${ruta}`);
+// La sesión vive en sessionStorage: se pierde al cerrar la pestaña
+const CLAVE_SESION = 'wwi-sesion';
+
+export function obtenerSesion() {
+  try {
+    return JSON.parse(sessionStorage.getItem(CLAVE_SESION));
+  } catch {
+    return null;
+  }
+}
+
+export function cerrarSesion() {
+  try { sessionStorage.removeItem(CLAVE_SESION); } catch { /* sin almacenamiento */ }
+  Object.keys(cacheCatalogos).forEach(ruta => delete cacheCatalogos[ruta]);
+  window.dispatchEvent(new Event('sesion-cerrada'));
+}
+
+export async function iniciarSesion(usuario, contrasena) {
+  const r = await fetch(`${API}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ usuario, contrasena })
+  });
   const json = await r.json();
-  if (json.error) throw new Error(json.error);
+  if (!r.ok) throw new Error(json.error || 'No se pudo iniciar sesión');
+  const sesion = { token: json.token, usuario: json.usuario };
+  try { sessionStorage.setItem(CLAVE_SESION, JSON.stringify(sesion)); } catch { /* sin almacenamiento */ }
+  return sesion;
+}
+
+async function llamar(ruta, opciones = {}) {
+  const sesion = obtenerSesion();
+  const headers = { ...opciones.headers };
+  if (sesion?.token) headers.Authorization = `Bearer ${sesion.token}`;
+
+  const r = await fetch(`${API}${ruta}`, { ...opciones, headers });
+  const texto = await r.text();
+  const json = texto ? JSON.parse(texto) : {};
+
+  if (r.status === 401) {
+    cerrarSesion();
+    throw new Error(json.error || 'Inicie sesión para continuar.');
+  }
+  if (!r.ok || json.error) {
+    throw new Error(json.error || 'La operación no pudo completarse');
+  }
   return json;
 }
 
-export async function enviar(ruta, metodo, datos) {
-  const r = await fetch(`${API}${ruta}`, {
+export function pedir(ruta) {
+  return llamar(ruta);
+}
+
+export function enviar(ruta, metodo, datos) {
+  return llamar(ruta, {
     method: metodo,
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(datos)
   });
-
-  const texto = await r.text();
-  const json = texto ? JSON.parse(texto) : {};
-
-  if (!r.ok || json.error) {
-    throw new Error(json.error || 'La operación no pudo completarse');
-  }
-
-  return json;
 }
 
 // Carga una lista de catálogo (categorías, métodos de entrega, colores...) una sola vez por ruta
