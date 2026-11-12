@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { sql, poolPromise } = require('../db');
+const { sql, estadoHttp } = require('../db');
 const { leerPagina, respuestaPaginada } = require('../paginacion');
 
 const camposProveedor = [
@@ -70,17 +70,17 @@ function faltaContacto(body) {
 }
 
 function estadoError(err) {
-  return err.number >= 50000 || err.code === 'EREQUEST' ? 400 : 500;
+  return estadoHttp(err, err.number >= 50000 || err.code === 'EREQUEST' ? 400 : 500);
 }
 
 // Categorías para el filtro (select) en React
 router.get('/categorias', async (req, res) => {
   try {
-    const pool = await poolPromise;
+    const pool = await req.pool();
     const result = await pool.request().execute('SP_GetSupplierCategoriesInUse');
     res.json({ total: result.recordset.length, data: result.recordset });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(estadoHttp(err)).json({ error: err.message });
   }
 });
 
@@ -90,7 +90,7 @@ router.get('/', async (req, res) => {
     const categoria = req.query.categoria ? parseInt(req.query.categoria) : null;
 
     const { pagina, porPagina } = leerPagina(req.query);
-    const pool = await poolPromise;
+    const pool = await req.pool();
     const result = await pool.request()
       .input('Pagina', sql.Int, pagina)
       .input('PorPagina', sql.Int, porPagina)
@@ -101,7 +101,7 @@ router.get('/', async (req, res) => {
 
     res.json(respuestaPaginada(result.recordset, pagina, porPagina));
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(estadoHttp(err)).json({ error: err.message });
   }
 });
 
@@ -116,7 +116,7 @@ router.post('/', async (req, res) => {
 
   // insert proveedor
   try {
-    const pool = await poolPromise;
+    const pool = await req.pool();
     const result = await parametrosProveedor(pool.request(), req.body)
       .execute('SP_InsertSupplier');
     res.status(201).json({ data: result.recordset[0] });
@@ -140,7 +140,7 @@ router.put('/:id', async (req, res) => {
 
   // update proveedor
   try {
-    const pool = await poolPromise;
+    const pool = await req.pool();
     await parametrosProveedor(pool.request(), req.body)
       .input('SupplierID', sql.Int, id)
       .execute('SP_UpdateSupplier');
@@ -158,7 +158,7 @@ router.delete('/:id', async (req, res) => {
 
   // delete proveedor
   try {
-    const pool = await poolPromise;
+    const pool = await req.pool();
     await pool.request().input('SupplierID', sql.Int, id).execute('SP_DeleteSupplier');
     res.status(204).send();
   } catch (err) {
@@ -169,14 +169,14 @@ router.delete('/:id', async (req, res) => {
 // Detalle
 router.get('/:id', async (req, res) => {
   try {
-    const pool = await poolPromise;
+    const pool = await req.pool();
     const result = await pool.request()
       .input('SupplierID', sql.Int, parseInt(req.params.id))
       .execute('SP_GetSupplierDetails');
 
     res.json({ data: result.recordset });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(estadoHttp(err)).json({ error: err.message });
   }
 });
 

@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { sql, poolPromise } = require('../db');
+const { sql, estadoHttp } = require('../db');
 const { leerPagina, respuestaPaginada } = require('../paginacion');
 
 const camposObligatorios = [
@@ -83,13 +83,13 @@ function faltaContacto(body) {
 }
 
 function estadoError(err) {
-  return err.number >= 50000 || err.code === 'EREQUEST' ? 400 : 500;
+  return estadoHttp(err, err.number >= 50000 || err.code === 'EREQUEST' ? 400 : 500);
 }
 
 router.get('/', async (req, res) => {
   try {
     const { pagina, porPagina } = leerPagina(req.query);
-    const pool = await poolPromise;
+    const pool = await req.pool();
     const result = await pool.request()
       .input('Pagina', sql.Int, pagina)
       .input('PorPagina', sql.Int, porPagina)
@@ -100,7 +100,7 @@ router.get('/', async (req, res) => {
 
     res.json(respuestaPaginada(result.recordset, pagina, porPagina));
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(estadoHttp(err)).json({ error: err.message });
   }
 });
 
@@ -115,7 +115,7 @@ router.post('/', async (req, res) => {
 
   // insert cliente
   try {
-    const pool = await poolPromise;
+    const pool = await req.pool();
     const result = await agregarParametrosCliente(pool.request(), req.body)
       .execute('SP_InsertCustomer');
 
@@ -141,7 +141,7 @@ router.put('/:id', async (req, res) => {
 
   // update cliente
   try {
-    const pool = await poolPromise;
+    const pool = await req.pool();
     await agregarParametrosCliente(pool.request(), req.body)
       .input('CustomerID', sql.Int, id)
       .execute('SP_UpdateCustomer');
@@ -160,7 +160,7 @@ router.delete('/:id', async (req, res) => {
 
   // delete cliente
   try {
-    const pool = await poolPromise;
+    const pool = await req.pool();
     await pool.request()
       .input('CustomerID', sql.Int, id)
       .execute('SP_DeleteCustomer');
@@ -174,14 +174,14 @@ router.delete('/:id', async (req, res) => {
 // Detalle
 router.get('/:nombre', async (req, res) => {
   try {
-    const pool = await poolPromise;
+    const pool = await req.pool();
     const result = await pool.request()
       .input('Nombre', sql.VarChar(100), req.params.nombre)
       .execute('SP_CLIENTES');
 
     res.json({ data: result.recordset });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(estadoHttp(err)).json({ error: err.message });
   }
 });
 

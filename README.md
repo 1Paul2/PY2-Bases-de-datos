@@ -375,20 +375,21 @@ La API no se conecta con `sa`. Cada nodo tiene solo el usuario de su rol y `app_
 ├── Docker/                          # Proyecto 2: docker-compose.yml, levantar.ps1 y verificar.ps1
 ├── Api/                             # Servicio API
 │   ├── index.js                     # Servidor Express y registro de rutas
-│   ├── db.js                        # Conexión a SQL Server
-│   ├── init.js                      # Carga los scripts SQL al iniciar
+│   ├── db.js                        # Un pool por nodo y usuario de base de datos
+│   ├── auth.js                      # Login con JWT y middleware que elige el nodo del usuario
+│   ├── .env.example                 # Plantilla de variables de entorno
 │   └── routes/                      # Una ruta por módulo
 │       ├── clientes.js
 │       ├── proveedores.js
 │       ├── productos.js
 │       ├── ventas.js
 │       ├── estadisticas.js
-│       └── .env.example             # Plantilla de variables de entorno
+│       └── catalogos.js
 └── WebSite/                         # Aplicación web
     └── src/
         ├── App.jsx                  # Menú y navegación entre módulos
         ├── Api.js                   # Funciones para llamar a la API
-        ├── pages/                   # Inicio, Clientes, Proveedores, Productos, Ventas, Estadísticas
+        ├── pages/                   # Login, Inicio, Clientes, Proveedores, Productos, Ventas, Estadísticas
         ├── components/              # Tabla, Filtros, Paginación, Detalle, Factura, Mapa
         └── styles/                  # Hojas de estilo
 ```
@@ -463,19 +464,23 @@ Se puede correr de nuevo sin perder datos. Los límites de memoria suman 7 GB (c
 
 ### 1. Base de datos
 
-Restaurar `WideWorldImporters-Full.bak` en SQL Server con el nombre `WideWorldImporters`.
+Levantar los tres nodos con `Docker/levantar.ps1` (sección *Nodos del Proyecto 2*). Ese script instala todos los procedimientos y los usuarios de base de datos; la API ya no instala scripts al iniciar.
 
 ### 2. API
 
-Crear el archivo `Api/.env` (la plantilla está en `Api/routes/.env.example`):
+Crear el archivo `Api/.env` a partir de `Api/.env.example`:
 
 ```env
-DB_USER=sa
-DB_PASSWORD=<su clave>
-DB_SERVER=localhost
-DB_NAME=WideWorldImporters
 PORT=3001
+DB_HOST=localhost
+DB_PORT_CORPORATIVO=1441
+DB_PORT_SANJOSE=1442
+DB_PORT_LIMON=1443
+APP_PASSWORD="<la misma APP_PASSWORD de Docker/.env>"
+JWT_SECRET=<frase larga y aleatoria>
 ```
+
+La clave va entre comillas si tiene `#`, porque `dotenv` toma lo que sigue al `#` como comentario.
 
 > La aplicación web espera la API en `http://localhost:3001/api` (ver `WebSite/src/Api.js`).
 
@@ -486,7 +491,17 @@ npm install
 node index.js
 ```
 
-Al iniciar, `init.js` ejecuta automáticamente todos los scripts de `Script/` (sinónimos, consultas, catálogos, CRUD y estadísticas), excepto `ejemplo_ejecucion.sql`, que es para correrlo a mano. **No hace falta correr los scripts a mano.**
+Cómo se conecta:
+
+| Usuario de la web | Nodo | Usuario de base de datos |
+|-------------------|------|--------------------------|
+| Administrador SJ | San José (1442) | `app_admin_sj` |
+| Administrador LI | Limón (1443) | `app_admin_li` |
+| Corporativo | Corporativo (1441) | `app_corporativo` |
+| Inicio de sesión | Corporativo; si no responde, San José y luego Limón | `app_login` |
+
+- Cada pool se crea la primera vez que se usa. Si un nodo está caído, la API arranca igual y responde `503` solo a quien necesita ese nodo; cuando el nodo vuelve, la siguiente petición se reconecta sin reiniciar la API.
+- El login funciona aunque el corporativo esté caído, porque `Seguridad.Usuarios` se replica a las sucursales.
 
 ### 3. Aplicación web
 
@@ -558,8 +573,8 @@ Los años de los filtros se validan contra los años existentes en la base de da
 - Una ruta por módulo: `/api/clientes`, `/api/proveedores`, `/api/productos`, `/api/ventas` y `/api/estadisticas`.
 - Todas las consultas se hacen con procedimientos almacenados y parámetros tipados (`mssql`). No hay SQL armado con texto ni cálculos en la API.
 - Valida los campos obligatorios antes de llamar al procedimiento.
-- Devuelve códigos HTTP apropiados: `400` para datos inválidos o errores de negocio lanzados por el SP (`THROW 50000+`) y `500` para errores internos.
-- Al iniciar, `init.js` crea en la base todos los sinónimos y procedimientos de la carpeta `Script/`.
+- Devuelve códigos HTTP apropiados: `400` para datos inválidos o errores de negocio lanzados por el SP (`THROW 50000+`), `401` sin sesión o con la sesión vencida, `403` si el usuario de base de datos de su rol no tiene permiso sobre el procedimiento, `503` si el nodo no responde y `500` para errores internos.
+- Inicio de sesión con token JWT (8 horas): cada petición lleva `Authorization: Bearer <token>` y se ejecuta en el nodo del usuario con el usuario de base de datos de su rol.
 
 ### Aplicación web (React + Vite)
 
@@ -627,7 +642,14 @@ Todos los módulos cumplen con: tabla de resultados, **filtros acumulativos**, b
 
 ## Referencia de la API
 
-URL base: `http://localhost:3001/api`
+URL base: `http://localhost:3001/api`. Todas las rutas, salvo `/salud` y `/auth/login`, requieren el header `Authorization: Bearer <token>`.
+
+### Sesión — `/auth`
+
+| Método | Ruta | Procedimiento | Cuerpo / respuesta |
+|--------|------|---------------|--------------------|
+| POST | `/auth/login` | `Seguridad.SP_IniciarSesion` | Recibe `{ usuario, contrasena }`; devuelve `{ token, usuario: { IdUser, Username, FullName, Rol, Sucursal, nodo }, nodoLogin }`. `401` si el usuario o la contraseña son incorrectos |
+| GET | `/auth/yo` | — | Datos del usuario del token |
 
 ### Clientes — `/clientes`
 
