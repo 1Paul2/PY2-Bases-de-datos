@@ -1,4 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { cerrarSesion, obtenerSesion } from './Api';
+import Login from './pages/Login';
 import Inicio from './pages/Inicio';
 import Clientes from './pages/Clientes';
 import Proveedores from './pages/Proveedores';
@@ -19,12 +21,26 @@ const modulosNav = {
 
 export default function App() {
   const [modulo, setModulo] = useState('inicio');
+  const [sesion, setSesion] = useState(obtenerSesion);
+
+  useEffect(() => {
+    const alCerrar = () => { setSesion(null); setModulo('inicio'); };
+    window.addEventListener('sesion-cerrada', alCerrar);
+    return () => window.removeEventListener('sesion-cerrada', alCerrar);
+  }, []);
+
+  if (!sesion) {
+    return <Login onEntrar={setSesion} />;
+  }
+
+  const salir = <button type="button" className="boton-salir" onClick={cerrarSesion}>Cerrar sesión</button>;
 
   if (modulo === 'inicio') {
-    return <Inicio onNavegar={setModulo} />;
+    return <>{salir}<Inicio onNavegar={setModulo} /></>;
   }
   return (
     <div className="App">
+      {salir}
       <header className="App-header">
         <div
           className="cabecera-marca"
