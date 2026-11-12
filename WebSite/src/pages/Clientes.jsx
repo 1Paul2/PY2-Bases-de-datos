@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { enviar, pedir, useCatalogo } from '../Api';
+import { puedeEditar } from '../permisos';
 import Filtros from '../components/Filtros';
 import Tabla from '../components/Tabla';
 import Paginacion from '../components/Paginacion';
@@ -218,6 +219,8 @@ export default function Clientes() {
   ];
 
 
+  const edita = puedeEditar('clientes');
+
   return (
     <section className="modulo">
       <div className="modulo-header">
@@ -228,11 +231,13 @@ export default function Clientes() {
             {total} {total === 1 ? 'resultado' : 'resultados'}
           </span>
         </div>
-        <div className="modulo-acciones">
-          <button type="button" className="btn btn-primario" onClick={abrirNuevo}>
-            + Nuevo cliente
-          </button>
-        </div>
+        {edita && (
+          <div className="modulo-acciones">
+            <button type="button" className="btn btn-primario" onClick={abrirNuevo}>
+              + Nuevo cliente
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="barra-filtros">
@@ -253,12 +258,16 @@ export default function Clientes() {
           acciones={fila => (
             <div className="acciones-fila">
               <button type="button" onClick={e => { e.stopPropagation(); verDetalle(fila); }}>Ver detalles</button>
-              <button type="button" onClick={evento => { evento.stopPropagation(); abrirEdicion(fila); }}>
-                Editar
-              </button>
-              <button type="button" onClick={evento => { evento.stopPropagation(); eliminar(fila); }}>
-                Eliminar
-              </button>
+              {edita && (
+                <>
+                  <button type="button" onClick={evento => { evento.stopPropagation(); abrirEdicion(fila); }}>
+                    Editar
+                  </button>
+                  <button type="button" onClick={evento => { evento.stopPropagation(); eliminar(fila); }}>
+                    Eliminar
+                  </button>
+                </>
+              )}
             </div>
           )}
         />

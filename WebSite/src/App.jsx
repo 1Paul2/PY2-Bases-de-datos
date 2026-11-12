@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { cerrarSesion, obtenerSesion } from './Api';
+import { modulosPermitidos, NOMBRE_SUCURSAL } from './permisos';
 import Login from './pages/Login';
 import Inicio from './pages/Inicio';
 import Clientes from './pages/Clientes';
@@ -33,9 +34,18 @@ export default function App() {
     return <Login onEntrar={setSesion} />;
   }
 
-  const salir = <button type="button" className="boton-salir" onClick={cerrarSesion}>Cerrar sesión</button>;
+  const { FullName, Rol, Sucursal } = sesion.usuario;
+  const permitidos = modulosPermitidos();
+  const salir = (
+    <div className="barra-usuario">
+      <span>
+        <strong>{FullName}</strong> · {Rol}{Sucursal ? ` · ${NOMBRE_SUCURSAL[Sucursal]}` : ''}
+      </span>
+      <button type="button" onClick={cerrarSesion}>Cerrar sesión</button>
+    </div>
+  );
 
-  if (modulo === 'inicio') {
+  if (modulo === 'inicio' || !permitidos.includes(modulo)) {
     return <>{salir}<Inicio onNavegar={setModulo} /></>;
   }
   return (
@@ -60,7 +70,7 @@ export default function App() {
         </div>
 
         <nav className="menu" aria-label="Módulos">
-          {Object.entries(modulosNav).map(([key, name]) => (
+          {Object.entries(modulosNav).filter(([key]) => key === 'inicio' || permitidos.includes(key)).map(([key, name]) => (
             <button
               key={key}
               type="button"

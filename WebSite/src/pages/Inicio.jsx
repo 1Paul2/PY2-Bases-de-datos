@@ -1,4 +1,5 @@
 import React from 'react';
+import { modulosPermitidos } from '../permisos';
 
 /* ============================================================
    ICONOS SVG 
@@ -146,7 +147,7 @@ export default function Inicio({ onNavegar }) {
         {/* ---------- Rejilla de módulos ---------- */}
         <div className="contenedor-modulos">
           <div className="rejilla-modulos">
-            {modulos.map((m) => (
+            {modulos.filter((m) => modulosPermitidos().includes(m.key)).map((m) => (
               <button
                 key={m.key}
                 type="button"

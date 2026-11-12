@@ -530,14 +530,34 @@ dd { margin: 0; }
 
 .tarjeta-login button:disabled { opacity: 0.6; cursor: default; }
 
-.boton-salir {
+.barra-usuario {
   position: fixed;
   top: 12px;
   right: 16px;
   z-index: 10;
-  padding: 6px 12px;
-  border: 1px solid rgba(53, 104, 89, 0.4);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100vw - 32px);
+  padding: 4px 4px 4px 12px;
+  border: 1px solid rgba(53, 104, 89, 0.3);
   border-radius: 8px;
+  background: #ffffff;
+  font-size: 0.85rem;
+  color: #334155;
+}
+
+.barra-usuario span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.barra-usuario button {
+  flex-shrink: 0;
+  padding: 5px 10px;
+  border: 1px solid rgba(53, 104, 89, 0.4);
+  border-radius: 6px;
   background: #ffffff;
   color: var(--verde-principal);
   font-weight: 600;

@@ -20,7 +20,8 @@ function crearRuta(ruta, sp, parametros = []) {
       const pool = await req.pool();
       const request = pool.request()
         .input('Pagina', sql.Int, pagina)
-        .input('PorPagina', sql.Int, porPagina);
+        .input('PorPagina', sql.Int, porPagina)
+        .input('Sucursal', sql.Char(2), ['SJ', 'LI'].includes(req.query.sucursal) ? req.query.sucursal : null);
 
       for (const p of parametros) {
         const raw = req.query[p.query];
