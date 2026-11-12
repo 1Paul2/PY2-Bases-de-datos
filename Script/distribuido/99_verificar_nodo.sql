@@ -76,7 +76,16 @@ IF @base IS NOT NULL
         DECLARE @pubs nvarchar(max);
         EXEC sp_executesql N''SELECT @p = STRING_AGG(name, N'''', '''') FROM dbo.syspublications;'', N''@p nvarchar(max) OUTPUT'', @pubs OUTPUT;
         PRINT CONCAT(''  Publica   : '', ISNULL(@pubs, N''ninguna''), '' (hacia el corporativo)'');
-    END');
+    END
+    DECLARE @app nvarchar(max) = (
+        SELECT STRING_AGG(CONCAT(x.usuario, N'' ('', x.rol, N'', '', x.permisos, N'' permisos)''), N'', '')
+        FROM (SELECT u.name AS usuario, r.name AS rol,
+                     (SELECT COUNT(*) FROM sys.database_permissions p WHERE p.grantee_principal_id = r.principal_id) AS permisos
+              FROM sys.database_role_members m
+              JOIN sys.database_principals r ON r.principal_id = m.role_principal_id
+              JOIN sys.database_principals u ON u.principal_id = m.member_principal_id
+              WHERE r.name LIKE N''rol[_]%'') x);
+    PRINT CONCAT(''  App       : '', ISNULL(@app, N''sin usuarios de la aplicacion''));');
 
 DECLARE @ls sysname, @inicio datetime2, @ms int;
 DECLARE c CURSOR LOCAL FAST_FORWARD FOR
