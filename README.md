@@ -213,6 +213,7 @@ El corporativo no guarda transacciones propias, pero sus estadísticas deben pod
 - La suscripción usa **snapshot**: crea las tablas `Resumen.*` y copia los datos existentes en el orden correcto, así ninguna venta hecha durante la copia se pierde. En el corporativo nada referencia esas tablas, así que se pueden crear y borrar sin problema.
 - WWI trae un índice *columnstore* agrupado en `StockItemTransactions`, y la replicación no acepta esas tablas (error 35353). En las sucursales se reemplaza por la llave primaria agrupada.
 - Las vistas `Resumen.vFacturas`, `vLineasFactura`, `vCompras`, `vLineasCompra`, `vMovimientos` y `vExistencias` unen las tablas de las dos sucursales con una columna `Sucursal` (`SJ` o `LI`): una estadística filtra con `WHERE Sucursal = @Sucursal` o toma todo para el consolidado.
+- En el corporativo `Syn_StockItemHoldings` apunta a `Resumen.vExistencias`, que tiene una fila por sucursal. Para que la lista y el detalle de productos no repitan cada producto, los procedimientos de productos leen `dbo.vExistenciasProducto` (creada en `Script/sql/sp_productos.sql`): en las sucursales es su tabla de existencias tal cual; en el corporativo suma las dos sucursales por producto y deja en `NULL` los datos propios de cada bodega (ubicación, costo, niveles de reorden).
 
 **Comprobado:** el corporativo tiene exactamente las mismas filas que cada sucursal en las 12 tablas (por ejemplo, 35 134 facturas de San José y 35 376 de Limón; la vista consolida 70 510). Una venta nueva en San José llega al corporativo en menos de 15 s, con su línea y el cambio de existencias; al borrarla, también se borra allá.
 
@@ -575,6 +576,7 @@ Los años de los filtros se validan contra los años existentes en la base de da
 - Valida los campos obligatorios antes de llamar al procedimiento.
 - Devuelve códigos HTTP apropiados: `400` para datos inválidos o errores de negocio lanzados por el SP (`THROW 50000+`), `401` sin sesión o con la sesión vencida, `403` si el usuario de base de datos de su rol no tiene permiso sobre el procedimiento, `503` si el nodo no responde y `500` para errores internos.
 - Inicio de sesión con token JWT (8 horas): cada petición lleva `Authorization: Bearer <token>` y se ejecuta en el nodo del usuario con el usuario de base de datos de su rol.
+- `roles.js` revisa el rol del token antes de llegar a la base, con la misma tabla de la sección 7: si el rol no puede usar ese método en ese módulo, responde `403` («Su rol no tiene acceso a esta operación»). La base es la segunda barrera: aunque la API dejara pasar algo, el usuario de base de datos no tiene permiso.
 
 ### Aplicación web (React + Vite)
 
@@ -617,9 +619,16 @@ Todos los módulos cumplen con: tabla de resultados, **filtros acumulativos**, b
 #### Estadísticas
 
 - Selector con los 10 reportes; cada uno muestra solo sus filtros.
+- Selector de sucursal: **Consolidado** (las dos sucursales), **San José** o **Limón**. Se envía como `?sucursal=` y filtra con la columna `Sucursal` de las vistas `Resumen`.
 - Los años, meses y categorías se eligen de listas cargadas de la base (solo aparecen años con datos).
 - Los reportes 7 y 8 se filtran por cliente/proveedor, año, mes, categoría y subcategoría.
 - Resultados en tabla con paginación. En los reportes con `ROLLUP`, las filas de subtotal y total general se muestran como «Total».
+
+#### Sesión y roles
+
+- Pantalla de inicio de sesión; la sesión se guarda en la pestaña y se cierra con el botón de la barra superior, que muestra el nombre, el rol y la sucursal del usuario.
+- El menú y las tarjetas del inicio muestran solo los módulos del rol (sección 7): el administrador ve clientes, proveedores, productos y ventas; el corporativo ve clientes, proveedores, productos y estadísticas.
+- Los botones de crear, editar y eliminar solo aparecen donde el rol puede usarlos: productos para el administrador, clientes y proveedores para el corporativo.
 
 #### Presentación y usabilidad
 
@@ -694,6 +703,8 @@ URL base: `http://localhost:3001/api`. Todas las rutas, salvo `/salud` y `/auth/
 | DELETE | `/ventas/:id` | `SP_DeleteSale` | — |
 
 ### Estadísticas — `/estadisticas`
+
+Solo para el rol corporativo. Las 10 rutas aceptan además `&sucursal=SJ` o `&sucursal=LI`; sin ese parámetro devuelven el consolidado.
 
 | # | Ruta | Procedimiento | Parámetros |
 |---|------|---------------|------------|
