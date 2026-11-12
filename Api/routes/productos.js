@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { sql, poolPromise } = require('../db');
+const { sql, estadoHttp } = require('../db');
 const { leerPagina, respuestaPaginada } = require('../paginacion');
 
 const camposProducto = [
@@ -73,13 +73,13 @@ function parametrosProducto(request, body) {
 }
 
 function estadoError(err) {
-  return err.number >= 50000 || err.code === 'EREQUEST' ? 400 : 500;
+  return estadoHttp(err, err.number >= 50000 || err.code === 'EREQUEST' ? 400 : 500);
 }
 
 // Grupos para llenar el filtro (select) en React
 router.get('/grupos', async (req, res) => {
   try {
-    const pool = await poolPromise;
+    const pool = await req.pool();
     const result = await pool.request().execute('SP_GetStockGroupsInUse');
     res.json({ total: result.recordset.length, data: result.recordset });
   } catch (err) {
@@ -93,7 +93,7 @@ router.get('/', async (req, res) => {
     const grupo = req.query.grupo ? parseInt(req.query.grupo) : null;
 
     const { pagina, porPagina } = leerPagina(req.query);
-    const pool = await poolPromise;
+    const pool = await req.pool();
     const result = await pool.request()
       .input('Pagina', sql.Int, pagina)
       .input('PorPagina', sql.Int, porPagina)
@@ -118,7 +118,7 @@ router.post('/', async (req, res) => {
 
   // insert product
   try {
-    const pool = await poolPromise;
+    const pool = await req.pool();
     const result = await parametrosProducto(pool.request(), req.body)
       .execute('SP_InsertStockItem');
     res.status(201).json({ data: result.recordset[0] });
@@ -139,7 +139,7 @@ router.put('/:id', async (req, res) => {
 
   // update product por id
   try {
-    const pool = await poolPromise;
+    const pool = await req.pool();
     await parametrosProducto(pool.request(), req.body)
       .input('StockItemID', sql.Int, id)
       .execute('SP_UpdateStockItem');
@@ -157,7 +157,7 @@ router.delete('/:id', async (req, res) => {
   
   // delete product por id 
   try {
-    const pool = await poolPromise;
+    const pool = await req.pool();
     await pool.request().input('StockItemID', sql.Int, id).execute('SP_DeleteStockItem');
     res.status(204).send();
   } catch (err) {
@@ -173,7 +173,7 @@ router.get('/:id', async (req, res) => {
   }
 
   try {
-    const pool = await poolPromise;
+    const pool = await req.pool();
     const result = await pool.request()
       .input('StockItemID', sql.Int, id)
       .execute('SP_GetStockItemDetails');

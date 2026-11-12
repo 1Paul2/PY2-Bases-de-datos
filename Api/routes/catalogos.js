@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { sql, poolPromise } = require('../db');
+const { sql, estadoHttp } = require('../db');
 
 // Catálogos para las listas de selección y los buscadores de los formularios.
 // Cada ruta llama a un único procedimiento almacenado y devuelve el resultado tal cual.
@@ -11,13 +11,13 @@ function limite(valor) {
   return Math.min(n, 50);
 }
 
-async function responder(res, ejecutar) {
+async function responder(req, res, ejecutar) {
   try {
-    const pool = await poolPromise;
+    const pool = await req.pool();
     const result = await ejecutar(pool.request());
     res.json({ total: result.recordset.length, data: result.recordset });
   } catch (err) {
-    const status = err.number >= 50000 ? 400 : 500;
+    const status = estadoHttp(err, err.number >= 50000 ? 400 : 500);
     res.status(status).json({ error: err.message });
   }
 }
@@ -44,46 +44,46 @@ const filtros = {
 };
 
 Object.entries(filtros).forEach(([ruta, [sp, tipo]]) => {
-  router.get(ruta, (req, res) => responder(res, request => {
+  router.get(ruta, (req, res) => responder(req, res, request => {
     if (tipo) request.input('Tipo', sql.VarChar(20), tipo);
     return request.execute(sp);
   }));
 });
 
 Object.entries(listas).forEach(([ruta, sp]) => {
-  router.get(ruta, (req, res) => responder(res, request => request.execute(sp)));
+  router.get(ruta, (req, res) => responder(req, res, request => request.execute(sp)));
 });
 
-router.get('/meses', (req, res) => responder(res, request => request.execute('SP_GetMonths')));
+router.get('/meses', (req, res) => responder(req, res, request => request.execute('SP_GetMonths')));
 
 // GET /api/catalogos/anios?tipo=ventas|compras|inventario
 router.get('/anios', (req, res) =>
-  responder(res, request => request
+  responder(req, res, request => request
     .input('Tipo', sql.VarChar(20), req.query.tipo || 'ventas')
     .execute('SP_GetYears')));
 
 // Buscadores: ?criterio=texto&cantidad=20
 router.get('/ciudades', (req, res) =>
-  responder(res, request => request
+  responder(req, res, request => request
     .input('Criterio', sql.NVarChar(50), req.query.criterio || null)
     .input('Cantidad', sql.Int, limite(req.query.cantidad))
     .execute('SP_SearchCities')));
 
 router.get('/personas', (req, res) =>
-  responder(res, request => request
+  responder(req, res, request => request
     .input('Criterio', sql.NVarChar(50), req.query.criterio || null)
     .input('SoloVendedores', sql.Bit, req.query.soloVendedores === '1' ? 1 : 0)
     .input('Cantidad', sql.Int, limite(req.query.cantidad))
     .execute('SP_SearchPeople')));
 
 router.get('/clientes', (req, res) =>
-  responder(res, request => request
+  responder(req, res, request => request
     .input('Criterio', sql.NVarChar(100), req.query.criterio || null)
     .input('Cantidad', sql.Int, limite(req.query.cantidad))
     .execute('SP_SearchCustomers')));
 
 router.get('/productos', (req, res) =>
-  responder(res, request => request
+  responder(req, res, request => request
     .input('Criterio', sql.NVarChar(100), req.query.criterio || null)
     .input('Cantidad', sql.Int, limite(req.query.cantidad))
     .execute('SP_SearchStockItems')));

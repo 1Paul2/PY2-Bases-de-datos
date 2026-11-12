@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { sql, poolPromise } = require('../db');
+const { sql, estadoHttp } = require('../db');
 
 const camposVenta = [
   'CustomerID', 'DeliveryMethodID', 'CustomerPurchaseOrderNumber',
@@ -51,7 +51,7 @@ function parametrosVenta(request, body) {
 }
 
 function estadoError(err) {
-  return err.number >= 50000 || err.code === 'EREQUEST' ? 400 : 500;
+  return estadoHttp(err, err.number >= 50000 || err.code === 'EREQUEST' ? 400 : 500);
 }
 
 // Listado con filtros acumulativos
@@ -61,7 +61,7 @@ router.get('/', async (req, res) => {
     const pagina = Math.max(Number.parseInt(req.query.pagina, 10) || 1, 1);
     const porPagina = Math.min(Math.max(Number.parseInt(req.query.porPagina, 10) || 10, 1), 100);
 
-    const pool = await poolPromise;
+    const pool = await req.pool();
     const filtros = request => request
       .input('CustomerName', sql.NVarChar(100), cliente || null)
       .input('InvoiceDateFrom', sql.Date, desde ? new Date(desde) : null)
@@ -79,7 +79,7 @@ router.get('/', async (req, res) => {
 
     res.json({ total: conteo.recordset[0]?.Total ?? 0, pagina, porPagina, data: result.recordset });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(estadoHttp(err)).json({ error: err.message });
   }
 });
 
@@ -94,7 +94,7 @@ router.post('/', async (req, res) => {
   }
 
   try {
-    const pool = await poolPromise;
+    const pool = await req.pool();
     const result = await parametrosVenta(pool.request(), req.body)
       .execute('SP_InsertSale');
     res.status(201).json({ data: result.recordset[0] });
@@ -118,7 +118,7 @@ router.put('/:id', async (req, res) => {
   }
 
   try {
-    const pool = await poolPromise;
+    const pool = await req.pool();
     await parametrosVenta(pool.request(), req.body)
       .input('InvoiceID', sql.Int, id)
       .input('BillToCustomerID', sql.Int, req.body.BillToCustomerID ?? req.body.CustomerID)
@@ -136,7 +136,7 @@ router.delete('/:id', async (req, res) => {
   }
 
   try {
-    const pool = await poolPromise;
+    const pool = await req.pool();
     await pool.request().input('InvoiceID', sql.Int, id).execute('SP_DeleteSale');
     res.status(204).send();
   } catch (err) {
@@ -148,7 +148,7 @@ router.delete('/:id', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const pool = await poolPromise;
+    const pool = await req.pool();
 
     const encabezado = await pool.request()
       .input('InvoiceID', sql.Int, id)
@@ -167,7 +167,7 @@ router.get('/:id', async (req, res) => {
       lineas: lineas.recordset
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(estadoHttp(err)).json({ error: err.message });
   }
 });
 

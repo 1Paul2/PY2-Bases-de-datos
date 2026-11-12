@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { sql, poolPromise } = require('../db');
+const { sql, estadoHttp } = require('../db');
 const { leerPagina, respuestaPaginada } = require('../paginacion');
 
 // Definidores de parámetros
@@ -17,7 +17,7 @@ function crearRuta(ruta, sp, parametros = []) {
   router.get(ruta, async (req, res) => {
     try {
       const { pagina, porPagina } = leerPagina(req.query);
-      const pool = await poolPromise;
+      const pool = await req.pool();
       const request = pool.request()
         .input('Pagina', sql.Int, pagina)
         .input('PorPagina', sql.Int, porPagina);
@@ -33,7 +33,7 @@ function crearRuta(ruta, sp, parametros = []) {
       res.json(respuestaPaginada(result.recordset, pagina, porPagina));
     } catch (err) {
       // Los THROW de los SPs (50001, 50002...) son errores del usuario, no del servidor
-      const status = err.number >= 50000 ? 400 : 500;
+      const status = estadoHttp(err, err.number >= 50000 ? 400 : 500);
       res.status(status).json({ error: err.message });
     }
   });
