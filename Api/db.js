@@ -17,7 +17,6 @@ function nodoCaido(nodo) {
   return err;
 }
 
-// Un pool por nodo y usuario; si no conecta se descarta, así la siguiente petición reintenta
 function obtenerPool(nodo, usuario = NODOS[nodo].usuario) {
   const clave = `${usuario}@${nodo}`;
   if (!pools[clave]) {
@@ -45,7 +44,6 @@ function nodoDelUsuario(usuario) {
   return usuario.Sucursal === 'SJ' ? 'sanjose' : 'limon';
 }
 
-// 503 si el nodo no responde, 403 si el usuario de BD no tiene permiso (error 229)
 function estadoHttp(err, porDefecto = 500) {
   if (err.status) return err.status;
   if (ERRORES_CONEXION.includes(err.code)) {

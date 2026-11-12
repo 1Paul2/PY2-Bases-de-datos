@@ -1,9 +1,6 @@
 import { useEffect, useState } from 'react';
 
-// En desarrollo se usa el proxy de Vite (/api → localhost:3001); en la versión publicada, la API local
 export const API = import.meta.env.DEV ? '/api' : 'http://localhost:3001/api';
-
-// La sesión vive en sessionStorage: se pierde al cerrar la pestaña
 const CLAVE_SESION = 'wwi-sesion';
 
 export function obtenerSesion() {
@@ -64,7 +61,6 @@ export function enviar(ruta, metodo, datos) {
   });
 }
 
-// Carga una lista de catálogo (categorías, métodos de entrega, colores...) una sola vez por ruta
 const cacheCatalogos = {};
 
 export function cargarCatalogo(ruta) {

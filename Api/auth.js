@@ -4,7 +4,6 @@ const { sql, obtenerPool, nodoDelUsuario, estadoHttp } = require('./db');
 
 const router = express.Router();
 
-// Seguridad.Usuarios se replica a las sucursales: si el corporativo no responde, se inicia sesión en otro nodo
 const NODOS_LOGIN = ['corporativo', 'sanjose', 'limon'];
 
 router.post('/login', async (req, res) => {
