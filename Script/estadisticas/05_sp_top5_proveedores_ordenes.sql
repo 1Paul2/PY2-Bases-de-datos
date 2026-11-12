@@ -4,19 +4,24 @@
 CREATE OR ALTER PROCEDURE sp_top5_proveedores_ordenes
     @anioInicio INT = NULL,  
     @anioFin INT = NULL,
+    @Sucursal CHAR(2) = NULL,   -- 'SJ', 'LI' o NULL para el consolidado
     @Pagina INT = NULL,
     @PorPagina INT = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
 
-    IF @anioInicio IS NULL SELECT @anioInicio = MIN(YEAR(OrderDate)) FROM Syn_PurchaseOrders;
-    IF @anioFin    IS NULL SELECT @anioFin    = MAX(YEAR(OrderDate)) FROM Syn_PurchaseOrders;
+    IF @anioInicio IS NULL SELECT @anioInicio = MIN(YEAR(OrderDate)) FROM Syn_PurchaseOrders
+                           WHERE @Sucursal IS NULL OR Sucursal = @Sucursal;
+    IF @anioFin    IS NULL SELECT @anioFin    = MAX(YEAR(OrderDate)) FROM Syn_PurchaseOrders
+                           WHERE @Sucursal IS NULL OR Sucursal = @Sucursal;
 
-    IF NOT EXISTS (SELECT 1 FROM Syn_PurchaseOrders WHERE YEAR(OrderDate) = @anioInicio)
+    IF NOT EXISTS (SELECT 1 FROM Syn_PurchaseOrders WHERE YEAR(OrderDate) = @anioInicio
+                   AND (@Sucursal IS NULL OR Sucursal = @Sucursal))
         THROW 50001, 'El año de inicio no existe en la base de datos.', 1;
 
-    IF NOT EXISTS (SELECT 1 FROM Syn_PurchaseOrders WHERE YEAR(OrderDate) = @anioFin)
+    IF NOT EXISTS (SELECT 1 FROM Syn_PurchaseOrders WHERE YEAR(OrderDate) = @anioFin
+                   AND (@Sucursal IS NULL OR Sucursal = @Sucursal))
         THROW 50002, 'El año final no existe en la base de datos.', 1;
 
     IF @anioInicio > @anioFin
@@ -31,6 +36,7 @@ BEGIN
         FROM Syn_PurchaseOrders PO
         INNER JOIN Syn_PurchaseOrderLines POL ON POL.PurchaseOrderID = PO.PurchaseOrderID
         WHERE YEAR(PO.OrderDate) BETWEEN @anioInicio AND @anioFin
+          AND (@Sucursal IS NULL OR PO.Sucursal = @Sucursal)
         GROUP BY PO.PurchaseOrderID, PO.SupplierID, YEAR(PO.OrderDate)
     ),
     OrdenesPorProveedor AS (

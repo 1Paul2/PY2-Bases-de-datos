@@ -3,6 +3,7 @@
 CREATE OR ALTER PROCEDURE sp_estadistica_cliente
     @NomCliente VARCHAR(100) = '',
     @categoria VARCHAR(100) = '',
+    @Sucursal CHAR(2) = NULL,   -- 'SJ', 'LI' o NULL para el consolidado
     @Pagina INT = NULL,
     @PorPagina INT = NULL
 AS
@@ -21,6 +22,7 @@ BEGIN
         INNER JOIN Syn_InvoiceLines IL ON IL.InvoiceID = I.InvoiceID
         WHERE C.CustomerName LIKE '%' + ISNULL(@NomCliente, '') + '%'
           AND CC.CustomerCategoryName LIKE '%' + ISNULL(@categoria, '') + '%'
+          AND (@Sucursal IS NULL OR I.Sucursal = @Sucursal)
         GROUP BY C.CustomerName, CC.CustomerCategoryName, I.InvoiceID
     )
     SELECT

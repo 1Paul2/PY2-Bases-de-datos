@@ -105,7 +105,8 @@ foreach ($nodo in $nodos.Keys) {
         '-i', '/tmp/07_preparar_replicacion.sql') | Select-String -NotMatch 'Changed database context'
 }
 
-$carpetas = 'sql', 'CRUD/PRODUCTOS', 'CRUD/CLIENTES', 'CRUD/PROVEEDORES', 'CRUD/VENTAS', 'estadisticas'
+# Las estadísticas no van aquí: son del rol corporativo y se instalan al final, después del 10
+$carpetas = 'sql', 'CRUD/PRODUCTOS', 'CRUD/CLIENTES', 'CRUD/PROVEEDORES', 'CRUD/VENTAS'
 foreach ($nodo in $nodos.Keys) {
     Write-Host "== $nodo : procedimientos del Proyecto 1" -ForegroundColor Cyan
     docker exec -u root $nodo rm -rf /tmp/Script
@@ -172,6 +173,22 @@ Write-Host '== corporativo : vistas Resumen' -ForegroundColor Cyan
 docker cp "$PSScriptRoot\..\Script\distribuido\10_vistas_resumen.sql" corporativo:/tmp/10_vistas_resumen.sql
 Invoke-Sql corporativo @('-I', '-v', 'NODO=corporativo', 'BASE=WWI_Corporativo', '-i', '/tmp/10_vistas_resumen.sql') |
     Select-String -NotMatch 'Changed database context|^\s*$'
+
+# Las estadísticas usan la columna Sucursal de las vistas Resumen: solo se pueden instalar
+# en el corporativo y cuando el 10 ya apuntó los sinónimos a esas vistas
+Write-Host '== corporativo : estadisticas' -ForegroundColor Cyan
+$listos = (Invoke-Sql corporativo @('-h', '-1', '-d', 'WWI_Corporativo', '-Q', "SET NOCOUNT ON; SELECT COUNT(*) FROM sys.synonyms WHERE base_object_name LIKE '%Resumen%'") | Select-Object -First 1).ToString().Trim()
+if ($listos -eq '6') {
+    docker exec -u root corporativo rm -rf /tmp/Script
+    docker cp "$PSScriptRoot\..\Script" corporativo:/tmp/Script
+    $total = 0
+    Get-ChildItem "$PSScriptRoot\..\Script\estadisticas" -Filter *.sql | Sort-Object Name | ForEach-Object {
+        Invoke-Sql corporativo @('-I', '-d', 'WWI_Corporativo', '-i', "/tmp/Script/estadisticas/$($_.Name)") | Out-Null
+        $total++
+    }
+    Write-Host "$total estadisticas instaladas"
+}
+else { Write-Host 'Las vistas Resumen todavia no estan listas; las estadisticas se instalan al volver a correr levantar.ps1' -ForegroundColor Yellow }
 
 Write-Host '== Verificacion' -ForegroundColor Green
 & "$PSScriptRoot\verificar.ps1"

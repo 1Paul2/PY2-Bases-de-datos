@@ -2,6 +2,7 @@
 CREATE OR ALTER PROCEDURE sp_top5_productos_ganancia
     @anio INT = NULL,
     @anioFin INT = NULL,
+    @Sucursal CHAR(2) = NULL,   -- 'SJ', 'LI' o NULL para el consolidado
     @Pagina INT = NULL,
     @PorPagina INT = NULL
 AS
@@ -16,10 +17,12 @@ BEGIN
 
     IF @anio IS NOT NULL
     BEGIN
-        IF NOT EXISTS (SELECT 1 FROM Syn_Invoices WHERE YEAR(InvoiceDate) = @anio)
+        IF NOT EXISTS (SELECT 1 FROM Syn_Invoices WHERE YEAR(InvoiceDate) = @anio
+                       AND (@Sucursal IS NULL OR Sucursal = @Sucursal))
             THROW 50001, 'El año indicado no existe en la base de datos.', 1;
 
-        IF NOT EXISTS (SELECT 1 FROM Syn_Invoices WHERE YEAR(InvoiceDate) = @anioFin)
+        IF NOT EXISTS (SELECT 1 FROM Syn_Invoices WHERE YEAR(InvoiceDate) = @anioFin
+                       AND (@Sucursal IS NULL OR Sucursal = @Sucursal))
             THROW 50002, 'El año final no existe en la base de datos.', 1;
 
         IF @anio > @anioFin
@@ -35,7 +38,8 @@ BEGIN
         FROM Syn_Invoices I
         INNER JOIN Syn_InvoiceLines IL ON IL.InvoiceID = I.InvoiceID
         INNER JOIN Syn_StockItems SI ON SI.StockItemID = IL.StockItemID
-        WHERE @anio IS NULL OR YEAR(I.InvoiceDate) BETWEEN @anio AND @anioFin
+        WHERE (@anio IS NULL OR YEAR(I.InvoiceDate) BETWEEN @anio AND @anioFin)
+          AND (@Sucursal IS NULL OR I.Sucursal = @Sucursal)
         GROUP BY YEAR(I.InvoiceDate), SI.StockItemID, SI.StockItemName
     ),
     Ranking AS (

@@ -3,6 +3,7 @@
 CREATE OR ALTER PROCEDURE sp_estadistica_proveedor
     @proveedor VARCHAR(100) = '',
     @categoria VARCHAR(100) = '',
+    @Sucursal CHAR(2) = NULL,   -- 'SJ', 'LI' o NULL para el consolidado
     @Pagina INT = NULL,
     @PorPagina INT = NULL
 AS
@@ -21,6 +22,7 @@ BEGIN
         INNER JOIN Syn_PurchaseOrderLines POL ON POL.PurchaseOrderID = PO.PurchaseOrderID
         WHERE S.SupplierName LIKE '%' + ISNULL(@proveedor, '') + '%'
           AND SC.SupplierCategoryName LIKE '%' + ISNULL(@categoria, '') + '%'
+          AND (@Sucursal IS NULL OR PO.Sucursal = @Sucursal)
         GROUP BY S.SupplierName, SC.SupplierCategoryName, PO.PurchaseOrderID
     )
     SELECT
