@@ -125,7 +125,8 @@ for nodo in "${NODOS[@]}"; do
         -i /tmp/07_preparar_replicacion.sql | excluir 'Changed database context'
 done
 
-CARPETAS=(sql CRUD/PRODUCTOS CRUD/CLIENTES CRUD/PROVEEDORES CRUD/VENTAS estadisticas)
+# Las estadísticas no van aquí: son del rol corporativo y se instalan al final, después del 10
+CARPETAS=(sql CRUD/PRODUCTOS CRUD/CLIENTES CRUD/PROVEEDORES CRUD/VENTAS)
 for nodo in "${NODOS[@]}"; do
     titulo "$nodo : procedimientos del Proyecto 1"
     docker exec -u root "$nodo" rm -rf /tmp/Script
@@ -190,6 +191,23 @@ else printf '\033[33m%s\033[0m\n' 'El snapshot de las ventas todavia no termina;
 titulo 'corporativo : vistas Resumen'
 docker cp "$SCRIPT/distribuido/10_vistas_resumen.sql" corporativo:/tmp/10_vistas_resumen.sql >/dev/null
 sql corporativo -I -v NODO=corporativo BASE=WWI_Corporativo -i /tmp/10_vistas_resumen.sql | excluir 'Changed database context|^\s*$'
+
+# Las estadísticas usan la columna Sucursal de las vistas Resumen: solo se pueden instalar
+# en el corporativo y cuando el 10 ya apuntó los sinónimos a esas vistas
+titulo 'corporativo : estadisticas'
+listos="$(sql corporativo -h -1 -d WWI_Corporativo -Q "SET NOCOUNT ON; SELECT COUNT(*) FROM sys.synonyms WHERE base_object_name LIKE '%Resumen%'" | head -1 | tr -d '[:space:]')"
+if [ "$listos" = 6 ]; then
+    docker exec -u root corporativo rm -rf /tmp/Script
+    docker cp "$SCRIPT" corporativo:/tmp/Script >/dev/null
+    total=0
+    while IFS= read -r archivo; do
+        sql corporativo -I -d WWI_Corporativo -i "/tmp/Script/estadisticas/$(basename "$archivo")" >/dev/null
+        total=$((total + 1))
+    done < <(find "$SCRIPT/estadisticas" -maxdepth 1 -name '*.sql' | sort)
+    echo "$total estadisticas instaladas"
+else
+    printf '\033[33m%s\033[0m\n' 'Las vistas Resumen todavia no estan listas; las estadisticas se instalan al volver a correr levantar.sh'
+fi
 
 printf '\033[32m== Verificacion\033[0m\n'
 "$DIR/verificar.sh"
