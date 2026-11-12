@@ -1,8 +1,6 @@
 -- #9
-
-DROP SYNONYM IF EXISTS Syn_StockItemTransactions;
-CREATE SYNONYM Syn_StockItemTransactions FOR Warehouse.StockItemTransactions;
-GO
+-- Syn_StockItemTransactions y Syn_StockItemHoldings los define sinonimos.sql y,
+-- en el corporativo, 10_vistas_resumen.sql (apuntan a las vistas Resumen)
 
 CREATE OR ALTER PROCEDURE sp_rotacion_inventario
     @anio INT = NULL,
@@ -10,6 +8,7 @@ CREATE OR ALTER PROCEDURE sp_rotacion_inventario
     @proveedor VARCHAR(100) = NULL,
     @categoriaId INT = NULL,
     @subcategoriaId INT = NULL,
+    @Sucursal CHAR(2) = NULL,   -- 'SJ', 'LI' o NULL para el consolidado
     @Pagina INT = NULL,
     @PorPagina INT = NULL
 AS
@@ -18,12 +17,14 @@ BEGIN
 
     IF @anio IS NOT NULL
        AND NOT EXISTS (SELECT 1 FROM Syn_StockItemTransactions
-                       WHERE YEAR(TransactionOccurredWhen) = @anio)
+                       WHERE YEAR(TransactionOccurredWhen) = @anio
+                         AND (@Sucursal IS NULL OR Sucursal = @Sucursal))
         THROW 50001, 'El año indicado no existe en la base de datos.', 1;
 
     DECLARE @ultima DATE;
     SELECT @ultima = MAX(CAST(TransactionOccurredWhen AS DATE))
-    FROM Syn_StockItemTransactions;
+    FROM Syn_StockItemTransactions
+    WHERE @Sucursal IS NULL OR Sucursal = @Sucursal;
 
     WITH Productos AS (
         SELECT SI.StockItemID, SI.StockItemName, S.SupplierName
@@ -52,6 +53,7 @@ BEGIN
                      THEN -T.Quantity ELSE 0 END) AS UnidadesVendidas
         FROM Syn_StockItemTransactions T
         INNER JOIN Productos P ON P.StockItemID = T.StockItemID
+        WHERE @Sucursal IS NULL OR T.Sucursal = @Sucursal
         GROUP BY T.StockItemID, YEAR(T.TransactionOccurredWhen)
     ),
     Movimiento AS (
@@ -62,7 +64,11 @@ BEGIN
             SUM(M.MovimientoNeto) OVER (PARTITION BY M.StockItemID) AS MovimientoTotal,
             ISNULL(H.QuantityOnHand, 0) AS ExistenciaActual
         FROM MovimientosAnio M
-        LEFT JOIN Syn_StockItemHoldings H ON H.StockItemID = M.StockItemID
+        -- Existencias sumadas: en el consolidado cada producto tiene una fila por sucursal
+        LEFT JOIN (SELECT StockItemID, SUM(QuantityOnHand) AS QuantityOnHand
+                   FROM Syn_StockItemHoldings
+                   WHERE @Sucursal IS NULL OR Sucursal = @Sucursal
+                   GROUP BY StockItemID) H ON H.StockItemID = M.StockItemID
     ),
     Acumulado AS (
         SELECT

@@ -7,6 +7,7 @@
     @cliente VARCHAR(100) = NULL,
     @categoriaId INT = NULL,
     @subcategoriaId INT = NULL,
+    @Sucursal CHAR(2) = NULL,   -- 'SJ', 'LI' o NULL para el consolidado
     @Pagina INT = NULL,
     @PorPagina INT = NULL
 AS
@@ -15,7 +16,8 @@ BEGIN
 
     -- Validaciones
     IF @anio IS NOT NULL
-       AND NOT EXISTS (SELECT 1 FROM Syn_Invoices WHERE YEAR(InvoiceDate) = @anio)
+       AND NOT EXISTS (SELECT 1 FROM Syn_Invoices WHERE YEAR(InvoiceDate) = @anio
+                       AND (@Sucursal IS NULL OR Sucursal = @Sucursal))
         THROW 50001, 'El año indicado no existe en la base de datos.', 1;
 
     IF @mes IS NOT NULL AND @mes NOT BETWEEN 1 AND 12
@@ -34,6 +36,7 @@ BEGIN
         INNER JOIN Syn_InvoiceLines IL ON IL.InvoiceID = I.InvoiceID
         WHERE (@anio IS NULL OR YEAR(I.InvoiceDate)  = @anio)
           AND (@mes  IS NULL OR MONTH(I.InvoiceDate) = @mes)
+          AND (@Sucursal IS NULL OR I.Sucursal = @Sucursal)
           AND (@categoria IS NULL OR EXISTS (
                 SELECT 1
                 FROM Syn_StockItemStockGroups SIG

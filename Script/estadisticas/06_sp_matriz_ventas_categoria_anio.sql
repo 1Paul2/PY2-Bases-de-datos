@@ -1,5 +1,6 @@
 -- #6
 CREATE OR ALTER PROCEDURE sp_matriz_ventas_categoria_anio
+    @Sucursal CHAR(2) = NULL,   -- 'SJ', 'LI' o NULL para el consolidado
     @Pagina INT = NULL,
     @PorPagina INT = NULL
 AS
@@ -12,14 +13,16 @@ BEGIN
 
     SELECT @cols = STUFF((
         SELECT ',' + QUOTENAME(CAST(Anio AS VARCHAR(4)))
-        FROM (SELECT DISTINCT YEAR(InvoiceDate) AS Anio FROM Syn_Invoices) A
+        FROM (SELECT DISTINCT YEAR(InvoiceDate) AS Anio FROM Syn_Invoices
+              WHERE @Sucursal IS NULL OR Sucursal = @Sucursal) A
         ORDER BY Anio
         FOR XML PATH('')), 1, 1, '');
 
     SELECT @colsSelect = STUFF((
         SELECT ',ISNULL(' + QUOTENAME(CAST(Anio AS VARCHAR(4))) + ', 0) AS '
                + QUOTENAME(CAST(Anio AS VARCHAR(4)))
-        FROM (SELECT DISTINCT YEAR(InvoiceDate) AS Anio FROM Syn_Invoices) A
+        FROM (SELECT DISTINCT YEAR(InvoiceDate) AS Anio FROM Syn_Invoices
+              WHERE @Sucursal IS NULL OR Sucursal = @Sucursal) A
         ORDER BY Anio
         FOR XML PATH('')), 1, 1, '');
 
@@ -39,6 +42,7 @@ BEGIN
                 ON SIG.StockItemID = IL.StockItemID
             INNER JOIN Syn_StockGroups SG
                 ON SG.StockGroupID = SIG.StockGroupID
+            WHERE @Sucursal IS NULL OR I.Sucursal = @Sucursal
         ) Origen
         PIVOT (
             SUM(Monto) FOR Anio IN (' + @cols + N')
@@ -47,6 +51,7 @@ BEGIN
         OFFSET (ISNULL(@Pagina, 1) - 1) * ISNULL(@PorPagina, 2147483647) ROWS
         FETCH NEXT ISNULL(@PorPagina, 2147483647) ROWS ONLY;';
 
-    EXEC sp_executesql @sql, N'@Pagina INT, @PorPagina INT', @Pagina = @Pagina, @PorPagina = @PorPagina;
+    EXEC sp_executesql @sql, N'@Sucursal CHAR(2), @Pagina INT, @PorPagina INT',
+         @Sucursal = @Sucursal, @Pagina = @Pagina, @PorPagina = @PorPagina;
 END;
 GO
