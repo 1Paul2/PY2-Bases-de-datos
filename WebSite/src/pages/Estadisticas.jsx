@@ -155,8 +155,8 @@ function tituloColumna(clave) {
 export default function Estadisticas() {
   const [pagina, setPagina] = useState(1);
   const [reporte, setReporte] = useState('proveedor');
+  const [sucursal, setSucursal] = useState('');
   const [filtros, setFiltros] = useState(filtrosIniciales);
-  // Copia de los filtros que se envía al SP 300 ms después de dejar de escribir
   const [filtrosConsulta, setFiltrosConsulta] = useState(filtrosIniciales);
   const [filas, setFilas] = useState([]);
   const [total, setTotal] = useState(0);
@@ -190,8 +190,8 @@ export default function Estadisticas() {
   }, [filtros]);
 
   useEffect(() => {
-    // La paginación la hace el SP; solo se envía la página que se quiere ver
     const params = new URLSearchParams({ pagina, porPagina: POR_PAGINA });
+    if (sucursal) params.append('sucursal', sucursal);
 
     configuracion.campos.forEach(campo => {
       const valor = filtrosConsulta[campo.nombre];
@@ -212,7 +212,7 @@ export default function Estadisticas() {
         setTotal(0);
         setError(err.message);
       });
-  }, [reporte, filtrosConsulta, pagina, configuracion.endpoint]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [reporte, sucursal, filtrosConsulta, pagina, configuracion.endpoint]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Al cambiar de reporte o restaurar, los filtros se limpian de inmediato (sin esperar los 300 ms)
   const cambiarReporte = evento => {
@@ -265,6 +265,15 @@ export default function Estadisticas() {
               {valor.titulo}
             </option>
           ))}
+        </select>
+      </label>
+
+      <label className="selector-reporte">
+        Sucursal
+        <select value={sucursal} onChange={e => { setSucursal(e.target.value); setPagina(1); }}>
+          <option value="">Consolidado</option>
+          <option value="SJ">San José</option>
+          <option value="LI">Limón</option>
         </select>
       </label>
 
