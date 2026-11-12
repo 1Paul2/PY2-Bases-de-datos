@@ -1,3 +1,21 @@
+IF OBJECT_ID(N'Sales.CustomersSensible') IS NOT NULL
+    EXEC (N'CREATE OR ALTER VIEW dbo.vExistenciasProducto AS
+        SELECT StockItemID,
+               SUM(QuantityOnHand) AS QuantityOnHand,
+               CAST(NULL AS nvarchar(20)) AS BinLocation,
+               CAST(NULL AS int) AS LastStocktakeQuantity,
+               CAST(NULL AS decimal(18, 2)) AS LastCostPrice,
+               CAST(NULL AS int) AS ReorderLevel,
+               CAST(NULL AS int) AS TargetStockLevel
+        FROM Syn_StockItemHoldings
+        GROUP BY StockItemID;');
+ELSE
+    EXEC (N'CREATE OR ALTER VIEW dbo.vExistenciasProducto AS
+        SELECT StockItemID, QuantityOnHand, BinLocation, LastStocktakeQuantity,
+               LastCostPrice, ReorderLevel, TargetStockLevel
+        FROM Syn_StockItemHoldings;');
+GO
+
 CREATE OR ALTER PROCEDURE SP_GetStockGroups
 AS
 BEGIN
@@ -8,15 +26,13 @@ BEGIN
 END;
 GO
 
--- Listado con filtros acumulativos: nombre, grupo y rango de cantidad disponible.
--- El grupo se filtra con EXISTS para que la columna de grupos siga mostrando TODOS los grupos del producto.
 CREATE OR ALTER PROCEDURE SP_GetStockItems
     @Name NVARCHAR(100) = NULL,
     @StockGroupID INT = NULL,
     @CantidadMinima INT = NULL,
     @CantidadMaxima INT = NULL,
-    @Pagina INT = NULL,       -- página a consultar (NULL = todas)
-    @PorPagina INT = NULL     -- registros por página (NULL = todos)
+    @Pagina INT = NULL,
+    @PorPagina INT = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -29,7 +45,7 @@ BEGIN
     FROM Syn_StockItems SI
     LEFT JOIN Syn_StockItemStockGroups SIG ON SIG.StockItemID = SI.StockItemID
     LEFT JOIN Syn_StockGroups SG ON SG.StockGroupID = SIG.StockGroupID
-    LEFT JOIN Syn_StockItemHoldings SIH ON SIH.StockItemID = SI.StockItemID
+    LEFT JOIN dbo.vExistenciasProducto SIH ON SIH.StockItemID = SI.StockItemID
     WHERE (@Name IS NULL OR SI.StockItemName LIKE '%' + @Name + '%')
         AND (@StockGroupID IS NULL OR EXISTS (
                 SELECT 1 FROM Syn_StockItemStockGroups G
@@ -98,7 +114,7 @@ BEGIN
     FROM Syn_StockItems SI
     INNER JOIN Syn_Suppliers S ON S.SupplierID = SI.SupplierID
     LEFT JOIN Syn_Colors C ON C.ColorID = SI.ColorID
-    LEFT JOIN Syn_StockItemHoldings SIH ON SIH.StockItemID = SI.StockItemID
+    LEFT JOIN dbo.vExistenciasProducto SIH ON SIH.StockItemID = SI.StockItemID
     INNER JOIN Syn_PackageTypes PT ON PT.PackageTypeID = SI.UnitPackageID
     INNER JOIN Syn_PackageTypes PT2 ON PT2.PackageTypeID = SI.OuterPackageID
 
