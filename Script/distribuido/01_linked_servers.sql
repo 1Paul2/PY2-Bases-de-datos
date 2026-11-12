@@ -22,8 +22,7 @@ BEGIN
         @server = @nombre,
         @srvproduct = N'',
         @provider = N'MSOLEDBSQL',
-        @datasrc = @servidor,
-        @provstr = N'TrustServerCertificate=yes';
+        @datasrc = @servidor;
 
     EXEC sp_addlinkedsrvlogin
         @rmtsrvname = @nombre,

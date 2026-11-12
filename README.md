@@ -231,7 +231,8 @@ El corporativo no guarda transacciones propias, pero sus estadísticas deben pod
 | Columna de sucursal en los resúmenes | `Sucursal` con los valores `SJ` y `LI` |
 | Tabla de usuarios (corporativo) | `Seguridad.Usuarios` |
 | Llave y certificado de las contraseñas | `LlaveUsuarios` (AES 256), `CertUsuarios` |
-| Usuarios de base de datos para la API | `app_admin_sj`, `app_admin_li`, `app_corporativo` |
+| Usuarios de base de datos para la API | `app_admin_sj`, `app_admin_li`, `app_corporativo`, `app_login` |
+| Roles de base de datos | `rol_administrador`, `rol_corporativo`, `rol_login` |
 
 ### 6. Riesgos a revisar en los bloques siguientes
 
@@ -250,7 +251,7 @@ El enunciado define dos roles. Cada usuario tiene un rol y, si es administrador,
 
 - La gestión de clientes y proveedores del Proyecto 1 se mantiene, pero en el corporativo: ahí están sus datos sensibles y es el maestro que los replica a las sucursales.
 - Crear ventas se mantiene para el administrador, porque cada sucursal maneja su propia facturación.
-- Cada rol usa un usuario de base de datos distinto (`app_admin_sj`, `app_admin_li`, `app_corporativo`) que solo tiene permiso de `EXECUTE` sobre los procedimientos de su rol. Así, aunque la web tuviera un error, la base no deja hacer lo que el rol no permite.
+- Cada rol usa un usuario de base de datos distinto (`app_admin_sj`, `app_admin_li`, `app_corporativo`) que solo tiene permiso de `EXECUTE` sobre los procedimientos de su rol. Así, aunque la web tuviera un error, la base no deja hacer lo que el rol no permite (sección 7.2).
 
 #### 7.1 Usuarios y contraseñas cifradas
 
@@ -288,6 +289,30 @@ Errores de estos procedimientos:
 | 50044 | Usuario o contraseña incorrectos |
 | 50045 | El usuario está inactivo |
 | 50090 | Los usuarios solo se crean en el corporativo |
+
+#### 7.2 Usuarios de base de datos por rol (`11_usuarios_bd.sql`)
+
+La API no se conecta con `sa`. Cada nodo tiene solo el usuario de su rol y `app_login`, todos con la clave `APP_PASSWORD` de `Docker/.env`:
+
+| Nodo | Usuario | Rol de base de datos |
+|------|---------|----------------------|
+| corporativo | `app_corporativo` | `rol_corporativo` |
+| sanjose | `app_admin_sj` | `rol_administrador` |
+| limon | `app_admin_li` | `rol_administrador` |
+| los tres | `app_login` | `rol_login` |
+
+| Rol | Permiso `EXECUTE` sobre |
+|-----|-------------------------|
+| `rol_login` | Solo `Seguridad.SP_IniciarSesion` |
+| `rol_administrador` | Productos (consultar, crear, modificar y eliminar), ventas (consultar y crear), consulta de clientes y proveedores, y los catálogos de los formularios |
+| `rol_corporativo` | Clientes y proveedores (consultar, crear, modificar y eliminar), consulta de productos, las 10 estadísticas y los catálogos de sus filtros |
+
+- Ningún rol puede leer ni modificar tablas directamente: un `SELECT` o un procedimiento de otro rol da el error 229 (*permission denied*).
+- Un usuario solo existe en su nodo: `app_admin_sj` no puede conectarse a Limón ni al corporativo.
+- `app_login` está en los tres nodos porque `Seguridad.Usuarios` se replica a las sucursales: un administrador puede iniciar sesión aunque el corporativo esté caído.
+- Los procedimientos con SQL dinámico rompen el encadenamiento de propiedad, así que necesitan `SELECT` sobre lo que consulta ese SQL: `rol_administrador` sobre las tablas de líneas y movimientos que revisa `SP_ProductoEnUso` antes de borrar un producto, y `rol_corporativo` sobre `Resumen.vFacturas`, `Resumen.vLineasFactura` y los grupos de productos que lee la matriz de ventas. No se usó `EXECUTE AS OWNER` porque con un contexto suplantado los linked servers fallan, salvo que la base sea `TRUSTWORTHY`, que es menos seguro.
+- El CRUD de clientes y proveedores revisa con `OBJECT_ID` que se esté ejecutando en el corporativo, y `OBJECT_ID` devuelve `NULL` si el usuario no puede ver la tabla. Por eso `rol_corporativo` tiene `VIEW DEFINITION` (solo ver que existe, no leerla) sobre `Sales.CustomersSensible` y `Purchasing.SuppliersSensible`.
+- Los linked servers se crean sin cadena de proveedor (`@provstr`): con ella, SQL Server rechaza el linked server para todo login que no sea `sysadmin` (error 7416, *no login-mapping exists*), aunque el mapeo a `wwi_enlace` exista.
 
 ### 8. Decisiones tomadas
 
@@ -386,7 +411,8 @@ Cada nodo es un contenedor con una tecnología distinta:
 2. Crear `Docker/.env` a partir de `Docker/.env.example` con:
    - la clave de `sa` (`SA_PASSWORD`) y la del login de enlace (`ENLACE_PASSWORD`). Ambas deben tener mayúsculas, minúsculas y números, y al menos 8 caracteres;
    - las dos frases que generan la llave de las contraseñas (`LLAVE_ORIGEN` y `LLAVE_IDENTIDAD`). No se deben cambiar después de levantar los nodos: las contraseñas ya cifradas solo se descifran con la llave original;
-   - la contraseña de los usuarios de ejemplo (`USUARIOS_PASSWORD`), de al menos 8 caracteres.
+   - la contraseña de los usuarios de ejemplo (`USUARIOS_PASSWORD`), de al menos 8 caracteres;
+   - la clave de los agentes de replicación (`REPLICACION_PASSWORD`) y la de los usuarios de base de datos de la API (`APP_PASSWORD`), con mayúsculas, minúsculas y números, y al menos 8 caracteres.
 3. Con Docker Desktop abierto, desde la carpeta `Docker`:
 
 ```powershell
@@ -407,11 +433,13 @@ El script hace, en orden:
 | 8 | `Script/distribuido/05_secuencias.sql` | Reinicia las secuencias de cada sucursal en su rango de IDs |
 | 9 | `Script/distribuido/06_seguridad.sql` | Crea la tabla de usuarios, la llave de las contraseñas y los procedimientos de login en los tres nodos, y los usuarios de ejemplo en el corporativo (sección 7.1) |
 | 10 | `Script/distribuido/07_preparar_replicacion.sql` | Crea el login `wwi_replicacion`, desactiva el historial de las tablas a replicar, agrega `LastEditedWhen` y las columnas `rowguid` de merge (sección 4) |
-| 11 | `Script/sql`, `Script/CRUD`, `Script/estadisticas` | Instala los sinónimos y procedimientos del Proyecto 1 en los tres nodos |
+| 11 | `Script/sql`, `Script/CRUD` | Instala los sinónimos y procedimientos del Proyecto 1 en los tres nodos |
 | 12 | `Script/distribuido/08_replicacion.sql` | En las sucursales alinea los datos con el corporativo; en el corporativo crea las publicaciones `PubCatalogo`, `PubDatos` y `PubUsuarios` y sus suscripciones, y espera la primera sincronización |
 | 13 | `Script/distribuido/09_replicaciones_ventas.sql` | En el corporativo registra a las sucursales como publicadoras; en cada sucursal crea `PubVentasSJ` / `PubVentasLI` y la suscripción del corporativo, y espera a que lleguen las ventas (sección 4.1) |
 | 14 | `Script/distribuido/10_vistas_resumen.sql` | Crea en el corporativo las vistas `Resumen.v*` que unen las dos sucursales |
-| 15 | `verificar.ps1` | Muestra el estado de cada nodo, incluidos los usuarios, la llave, la replicación y las tablas `Resumen` |
+| 15 | `Script/estadisticas` | Instala las 10 estadísticas en el corporativo, que leen de las vistas `Resumen` |
+| 16 | `Script/distribuido/11_usuarios_bd.sql` | Crea en cada nodo el usuario de base de datos de su rol y `app_login`, con permiso solo sobre los procedimientos de su rol (sección 7.2) |
+| 17 | `verificar.ps1` | Muestra el estado de cada nodo, incluidos los usuarios, la llave, la replicación, las tablas `Resumen` y los usuarios de la aplicación |
 
 Los pasos 6, 7 y 10 quedan registrados en la tabla `dbo.ControlFragmentacion` de cada base, y el 12 y el 13 revisan qué publicaciones y suscripciones ya existen: si se vuelven a correr, no repiten nada.
 
