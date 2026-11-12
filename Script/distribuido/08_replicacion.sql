@@ -61,7 +61,8 @@ BEGIN
           AND NOT EXISTS (SELECT 1 FROM msdb.dbo.sysjobactivity a
                           WHERE a.job_id = j.job_id
                             AND a.session_id = (SELECT MAX(session_id) FROM msdb.dbo.syssessions)
-                            AND a.start_execution_date IS NOT NULL AND a.stop_execution_date IS NULL);
+                            AND ((a.start_execution_date IS NOT NULL AND a.stop_execution_date IS NULL)
+                                 OR (a.queued_date IS NOT NULL AND a.start_execution_date IS NULL)));
     OPEN c;
     FETCH NEXT FROM c INTO @job;
     WHILE @@FETCH_STATUS = 0
