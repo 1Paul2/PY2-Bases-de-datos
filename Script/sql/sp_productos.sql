@@ -6,13 +6,14 @@ IF OBJECT_ID(N'Sales.CustomersSensible') IS NOT NULL
                CAST(NULL AS int) AS LastStocktakeQuantity,
                CAST(NULL AS decimal(18, 2)) AS LastCostPrice,
                CAST(NULL AS int) AS ReorderLevel,
-               CAST(NULL AS int) AS TargetStockLevel
+               CAST(NULL AS int) AS TargetStockLevel,
+               CAST(NULL AS datetime2(7)) AS LastEditedWhen
         FROM Syn_StockItemHoldings
         GROUP BY StockItemID;');
 ELSE
     EXEC (N'CREATE OR ALTER VIEW dbo.vExistenciasProducto AS
         SELECT StockItemID, QuantityOnHand, BinLocation, LastStocktakeQuantity,
-               LastCostPrice, ReorderLevel, TargetStockLevel
+               LastCostPrice, ReorderLevel, TargetStockLevel, LastEditedWhen
         FROM Syn_StockItemHoldings;');
 GO
 
@@ -110,7 +111,8 @@ BEGIN
       WHERE G.StockItemID = SI.StockItemID), 'Sin grupo') as StockGroupNamesTexto,
     (SELECT STRING_AGG(CAST(G.StockGroupID AS VARCHAR(10)), ',')
        FROM Syn_StockItemStockGroups G
-      WHERE G.StockItemID = SI.StockItemID) as StockGroupIDs
+      WHERE G.StockItemID = SI.StockItemID) as StockGroupIDs,
+    CONCAT(CONVERT(VARCHAR(27), SI.LastEditedWhen, 121), '|', CONVERT(VARCHAR(27), SIH.LastEditedWhen, 121)) as Version
     FROM Syn_StockItems SI
     INNER JOIN Syn_Suppliers S ON S.SupplierID = SI.SupplierID
     LEFT JOIN Syn_Colors C ON C.ColorID = SI.ColorID
