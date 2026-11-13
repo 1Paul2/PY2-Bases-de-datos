@@ -193,7 +193,8 @@ export default function Productos() {
         LastCostPrice: datos.LastCostPrice ?? '',
         ReorderLevel: datos.ReorderLevel ?? 0,
         TargetStockLevel: datos.TargetStockLevel ?? 0,
-        StockGroups: datos.StockGroupIDs ? String(datos.StockGroupIDs).split(',').map(Number) : []
+        StockGroups: datos.StockGroupIDs ? String(datos.StockGroupIDs).split(',').map(Number) : [],
+        Version: datos.Version ?? null
       });
       setError('');
       setMensaje('');

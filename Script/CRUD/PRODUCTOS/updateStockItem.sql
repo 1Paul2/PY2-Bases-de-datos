@@ -24,7 +24,8 @@ CREATE OR ALTER PROCEDURE SP_UpdateStockItem
     @ReorderLevel INT = NULL,
     @TargetStockLevel INT = NULL,
     @StockGroups NVARCHAR(400) = NULL,
-    @LastEditedBy INT = NULL
+    @LastEditedBy INT = NULL,
+    @Version VARCHAR(60) = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -62,6 +63,14 @@ BEGIN
 
     BEGIN TRY
         BEGIN TRANSACTION;
+        DECLARE @VersionActual VARCHAR(60);
+        SELECT @VersionActual = CONCAT(CONVERT(VARCHAR(27), SI.LastEditedWhen, 121), '|', CONVERT(VARCHAR(27), SIH.LastEditedWhen, 121))
+        FROM Syn_StockItems SI WITH (UPDLOCK, ROWLOCK)
+        LEFT JOIN Syn_StockItemHoldings SIH WITH (UPDLOCK, ROWLOCK) ON SIH.StockItemID = SI.StockItemID
+        WHERE SI.StockItemID = @StockItemID;
+
+        IF @Version IS NOT NULL AND @VersionActual <> @Version
+            THROW 50026, 'Otro usuario modificó este producto mientras usted lo editaba. Vuelva a abrirlo para ver los cambios.', 1;
 
         UPDATE Syn_StockItems
         SET StockItemName = @StockItemName,
@@ -94,7 +103,8 @@ BEGIN
                 LastCostPrice = ISNULL(@LastCostPrice, LastCostPrice),
                 ReorderLevel = ISNULL(@ReorderLevel, ReorderLevel),
                 TargetStockLevel = ISNULL(@TargetStockLevel, TargetStockLevel),
-                LastEditedBy = @LastEditedBy
+                LastEditedBy = @LastEditedBy,
+                LastEditedWhen = SYSDATETIME()
             WHERE StockItemID = @StockItemID;
         END
         ELSE

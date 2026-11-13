@@ -64,6 +64,11 @@ BEGIN
         IF EXISTS (SELECT 1 FROM #Lineas WHERE Quantity <= 0 OR UnitPrice < 0 OR TaxRate < 0)
             THROW 50016, 'Las cantidades deben ser mayores que cero y los precios e impuestos no pueden ser negativos.', 1;
 
+        DECLARE @Bloqueadas INT;
+        SELECT @Bloqueadas = COUNT(*)
+        FROM Syn_StockItemHoldings WITH (UPDLOCK, ROWLOCK)
+        WHERE StockItemID IN (SELECT StockItemID FROM #Lineas);
+
         DECLARE @SinInventario NVARCHAR(2000);
         SELECT @SinInventario = STRING_AGG(CAST(SI.StockItemName AS NVARCHAR(MAX)) + ' (disponible: '
                    + CAST(CAST(ISNULL(SIH.QuantityOnHand, 0) AS INT) AS NVARCHAR(20)) + ')', '; ')

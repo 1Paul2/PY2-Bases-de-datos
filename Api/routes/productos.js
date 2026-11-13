@@ -142,10 +142,12 @@ router.put('/:id', async (req, res) => {
     const pool = await req.pool();
     await parametrosProducto(pool.request(), req.body)
       .input('StockItemID', sql.Int, id)
+      .input('Version', sql.VarChar(60), req.body.Version || null)
       .execute('SP_UpdateStockItem');
     res.status(204).send();
   } catch (err) {
-    res.status(estadoError(err)).json({ error: err.message });
+    // 50026: otro usuario modificó el producto después de que este lo abrió
+    res.status(err.number === 50026 ? 409 : estadoError(err)).json({ error: err.message });
   }
 });
 
