@@ -229,7 +229,31 @@ El corporativo no guarda transacciones propias, pero sus estadísticas deben pod
 
 **Comprobado:** el corporativo tiene exactamente las mismas filas que cada sucursal en las 12 tablas (por ejemplo, 35 256 facturas de San José y 35 254 de Limón; la vista consolida 70 510). Una venta nueva en San José llega al corporativo en menos de 15 s, con su línea y el cambio de existencias; al borrarla, también se borra allá.
 
-**Pendiente:** que los procedimientos de estadísticas lean de estas vistas y reciban el parámetro `@Sucursal` (San José, Limón o consolidado). Las vistas indexadas no admiten `UNION ALL`, así que la parte "materializada" son las tablas `Resumen.*`: copias físicas en el corporativo que la replicación mantiene al día.
+Las 10 estadísticas leen de estas vistas (por medio de los sinónimos del corporativo) y reciben `@Sucursal`: `SJ`, `LI` o `NULL` para el consolidado.
+
+#### 4.2 Vistas materializadas (`12_vistas_indexadas.sql`)
+
+Una vista con `UNION ALL` no se puede indexar, así que se materializa cada sucursal por separado y el consolidado une los índices ya calculados:
+
+| Vista | Qué guarda | Índice |
+|-------|------------|--------|
+| `Resumen.ivVentasMes_SJ` / `_LI` | Por año y mes: líneas (`COUNT_BIG(*)`), unidades, monto (`SUM(ExtendedPrice)`) y ganancia (`SUM(LineProfit)`), de `Facturas_X` ⋈ `LineasFactura_X` | `CREATE UNIQUE CLUSTERED INDEX` sobre `(Anio, Mes)` |
+| `Resumen.ivComprasMes_SJ` / `_LI` | Por año y mes: líneas, bultos y monto esperado (`SUM(OrderedOuters * ISNULL(ExpectedUnitPricePerOuter, 0))`), de `Compras_X` ⋈ `LineasCompra_X` | Igual |
+| `Resumen.vVentasMes`, `Resumen.vComprasMes` | Consolidado con columna `Sucursal`: une las dos vistas indexadas leyendo sus índices con `WITH (NOEXPAND)` | — |
+
+- Son `WITH SCHEMABINDING`, usan solo `INNER JOIN`, `COUNT_BIG(*)` y `SUM` sobre expresiones que no pueden ser `NULL` (por eso el `ISNULL` en el precio de compra), como exige SQL Server. Cuentan líneas y no facturas porque `COUNT(DISTINCT)` no se permite en una vista indexada.
+- SQL Server mantiene los índices solo: cada inserción, cambio o borrado que la replicación aplica en `Resumen.*` actualiza la fila del mes correspondiente.
+- Una tabla con una vista `SCHEMABINDING` encima no se puede borrar. Por eso los artículos de facturas, líneas de factura, compras y líneas de compra se publican con `pre_creation_cmd = 'delete'` (`09`): si la suscripción se reinicializa, el agente vacía esas tablas y las vuelve a llenar en lugar de borrarlas. Esa opción no se puede cambiar en una suscripción activa sin reinicializarla, así que nodos levantados antes de este cambio deben reconstruirse desde cero; el `12` avisa si encuentra artículos con la opción vieja.
+
+**Comprobado** (después de reconstruir desde cero):
+
+| Prueba | Resultado |
+|--------|-----------|
+| Materializadas | Las 4 vistas tienen índice clúster con 41 filas propias cada una (un mes por fila, enero 2013 a mayo 2016) |
+| Mismo resultado que calcular desde cero | 0 filas distintas en ventas y compras de las dos sucursales; el consolidado suma las 228 265 líneas |
+| Usa los índices | El total por año desde `vVentasMes` lee 4 páginas de los índices de las vistas; calcularlo desde las tablas lee 1 991 páginas y usa 1 521 ms de CPU |
+| Se mantienen con la replicación | Una venta nueva en San José aparece en `ivVentasMes_SJ` en 8 s; al borrarla, la fila del mes desaparece en 8 s |
+| Reinicialización | Reinicializar la suscripción completa de San José vacía y vuelve a llenar las tablas en 27 s; las vistas indexadas siguen existiendo y coinciden con el cálculo desde cero |
 
 ### 5. Nombres
 
@@ -239,7 +263,7 @@ El corporativo no guarda transacciones propias, pero sus estadísticas deben pod
 | Servidores (contenedores) | `corporativo`, `sanjose`, `limon` |
 | Linked servers (cada nodo ve a los otros dos) | `LS_CORPORATIVO`, `LS_SANJOSE`, `LS_LIMON` |
 | Publicaciones | `PubCatalogo` (merge), `PubDatos` y `PubUsuarios` (transaccionales, del corporativo); `PubVentasSJ` y `PubVentasLI` (transaccionales, de cada sucursal) |
-| Esquema de las ventas de las sucursales en el corporativo | `Resumen` (tablas `<Tabla>_SJ` / `_LI`, vistas `v<Tabla>`) |
+| Esquema de las ventas de las sucursales en el corporativo | `Resumen` (tablas `<Tabla>_SJ` / `_LI`, vistas `v<Tabla>`, vistas indexadas `iv<Resumen>Mes_SJ` / `_LI`) |
 | Logins técnicos | `wwi_enlace` (linked servers), `wwi_replicacion` (agentes de replicación) |
 | Columna de sucursal en los resúmenes | `Sucursal` con los valores `SJ` y `LI` |
 | Tabla de usuarios (corporativo) | `Seguridad.Usuarios` |
@@ -451,9 +475,10 @@ El script hace, en orden:
 | 12 | `Script/distribuido/08_replicacion.sql` | En las sucursales alinea los datos con el corporativo; en el corporativo crea las publicaciones `PubCatalogo`, `PubDatos` y `PubUsuarios` y sus suscripciones, y espera la primera sincronización |
 | 13 | `Script/distribuido/09_replicaciones_ventas.sql` | En el corporativo registra a las sucursales como publicadoras; en cada sucursal crea `PubVentasSJ` / `PubVentasLI` y la suscripción del corporativo, y espera a que lleguen las ventas (sección 4.1) |
 | 14 | `Script/distribuido/10_vistas_resumen.sql` | Crea en el corporativo las vistas `Resumen.v*` que unen las dos sucursales |
-| 15 | `Script/estadisticas` | Instala las 10 estadísticas en el corporativo, que leen de las vistas `Resumen` |
-| 16 | `Script/distribuido/11_usuarios_bd.sql` | Crea en cada nodo el usuario de base de datos de su rol y `app_login`, con permiso solo sobre los procedimientos de su rol (sección 7.2) |
-| 17 | `verificar.ps1` | Muestra el estado de cada nodo, incluidos los usuarios, la llave, la replicación, las tablas `Resumen` y los usuarios de la aplicación |
+| 15 | `Script/distribuido/12_vistas_indexadas.sql` | Crea en el corporativo las 4 vistas indexadas de ventas y compras por mes y las vistas de consolidado (sección 4.2); en las sucursales revisa que los artículos de ventas sean compatibles |
+| 16 | `Script/estadisticas` | Instala las 10 estadísticas en el corporativo, que leen de las vistas `Resumen` |
+| 17 | `Script/distribuido/11_usuarios_bd.sql` | Crea en cada nodo el usuario de base de datos de su rol y `app_login`, con permiso solo sobre los procedimientos de su rol (sección 7.2) |
+| 18 | `verificar.ps1` | Muestra el estado de cada nodo, incluidos los usuarios, la llave, la replicación, las tablas `Resumen`, las vistas indexadas y los usuarios de la aplicación |
 
 Los pasos 6, 7 y 10 quedan registrados en la tabla `dbo.ControlFragmentacion` de cada base, y el 12 y el 13 revisan qué publicaciones y suscripciones ya existen: si se vuelven a correr, no repiten nada.
 

@@ -175,6 +175,13 @@ docker cp "$PSScriptRoot\..\Script\distribuido\10_vistas_resumen.sql" corporativ
 Invoke-Sql corporativo @('-I', '-v', 'NODO=corporativo', 'BASE=WWI_Corporativo', '-i', '/tmp/10_vistas_resumen.sql') |
     Select-String -NotMatch 'Changed database context|^\s*$'
 
+foreach ($nodo in 'sanjose', 'limon', 'corporativo') {
+    Write-Host "== $nodo : vistas indexadas" -ForegroundColor Cyan
+    docker cp "$PSScriptRoot\..\Script\distribuido\12_vistas_indexadas.sql" "${nodo}:/tmp/12_vistas_indexadas.sql"
+    Invoke-Sql $nodo @('-I', '-v', "NODO=$nodo", "BASE=$($nodos[$nodo])", '-i', '/tmp/12_vistas_indexadas.sql') |
+        Select-String -NotMatch 'Changed database context|^\s*$'
+}
+
 # Las estadísticas usan la columna Sucursal de las vistas Resumen: solo se pueden instalar
 # en el corporativo y cuando el 10 ya apuntó los sinónimos a esas vistas
 Write-Host '== corporativo : estadisticas' -ForegroundColor Cyan
