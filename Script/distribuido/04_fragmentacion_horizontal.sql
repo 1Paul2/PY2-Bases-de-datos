@@ -10,18 +10,71 @@ BEGIN
 END
 GO
 
+IF OBJECT_ID(N'dbo.VendedorSucursal') IS NULL
+    CREATE TABLE dbo.VendedorSucursal (
+        PersonID int NOT NULL CONSTRAINT PK_VendedorSucursal PRIMARY KEY,
+        Sucursal char(2) NOT NULL CONSTRAINT CK_VendedorSucursal CHECK (Sucursal IN ('SJ', 'LI')),
+        Facturas int NOT NULL
+    );
+GO
+
 DECLARE @nodo sysname = N'$(NODO)';
-DECLARE @vendedores TABLE (PersonID int PRIMARY KEY);
 DECLARE @par int = CASE @nodo WHEN N'sanjose' THEN 0 WHEN N'limon' THEN 1 END;
+DECLARE @sucursal char(2) = CASE @nodo WHEN N'sanjose' THEN 'SJ' WHEN N'limon' THEN 'LI' END;
+DELETE FROM dbo.VendedorSucursal;
 
-IF @nodo = N'sanjose' INSERT INTO @vendedores VALUES (2), (3), (6), (7), (8);
-IF @nodo = N'limon'   INSERT INTO @vendedores VALUES (13), (14), (15), (16), (20);
+DECLARE @persona int, @cantidad int, @totalSJ int = 0, @totalLI int = 0;
+DECLARE c CURSOR LOCAL FAST_FORWARD FOR
+    SELECT PersonID, SUM(Facturas)
+    FROM (
+        SELECT SalespersonPersonID AS PersonID, COUNT(*) AS Facturas FROM Sales.Invoices GROUP BY SalespersonPersonID
+        UNION ALL
+        SELECT DISTINCT SalespersonPersonID, 0 FROM Sales.Orders
+    ) v
+    WHERE PersonID IS NOT NULL
+    GROUP BY PersonID
+    ORDER BY SUM(Facturas) DESC, PersonID;
+OPEN c;
+FETCH NEXT FROM c INTO @persona, @cantidad;
+WHILE @@FETCH_STATUS = 0
+BEGIN
+    IF @totalSJ <= @totalLI
+    BEGIN
+        INSERT INTO dbo.VendedorSucursal VALUES (@persona, 'SJ', @cantidad);
+        SET @totalSJ += @cantidad;
+    END
+    ELSE
+    BEGIN
+        INSERT INTO dbo.VendedorSucursal VALUES (@persona, 'LI', @cantidad);
+        SET @totalLI += @cantidad;
+    END
+    FETCH NEXT FROM c INTO @persona, @cantidad;
+END
+CLOSE c;
+DEALLOCATE c;
 
-SELECT InvoiceID INTO #facturas FROM Sales.Invoices
-WHERE SalespersonPersonID NOT IN (SELECT PersonID FROM @vendedores);
+IF EXISTS (SELECT 1 FROM Sales.Invoices I
+           WHERE NOT EXISTS (SELECT 1 FROM dbo.VendedorSucursal V WHERE V.PersonID = I.SalespersonPersonID))
+   OR EXISTS (SELECT 1 FROM Sales.Orders O
+              WHERE NOT EXISTS (SELECT 1 FROM dbo.VendedorSucursal V WHERE V.PersonID = O.SalespersonPersonID))
+    THROW 50110, 'Hay facturas o pedidos sin vendedor asignado a una sucursal; no se fragmenta.', 1;
 
-SELECT OrderID INTO #pedidos FROM Sales.Orders
-WHERE SalespersonPersonID NOT IN (SELECT PersonID FROM @vendedores);
+IF EXISTS (SELECT 1 FROM Sales.Invoices I
+           JOIN Sales.Orders O ON O.OrderID = I.OrderID
+           JOIN dbo.VendedorSucursal VI ON VI.PersonID = I.SalespersonPersonID
+           JOIN dbo.VendedorSucursal VO ON VO.PersonID = O.SalespersonPersonID
+           WHERE VI.Sucursal <> VO.Sucursal)
+    THROW 50111, 'Hay facturas cuyo pedido quedaría en otra sucursal; no se fragmenta.', 1;
+
+PRINT CONCAT('Vendedores repartidos: San Jose ', @totalSJ, ' facturas, Limon ', @totalLI, ' facturas');
+
+SELECT InvoiceID INTO #facturas FROM Sales.Invoices I
+WHERE @sucursal IS NULL
+   OR NOT EXISTS (SELECT 1 FROM dbo.VendedorSucursal V WHERE V.PersonID = I.SalespersonPersonID AND V.Sucursal = @sucursal);
+
+SELECT OrderID INTO #pedidos FROM Sales.Orders O
+WHERE @sucursal IS NULL
+   OR NOT EXISTS (SELECT 1 FROM dbo.VendedorSucursal V WHERE V.PersonID = O.SalespersonPersonID AND V.Sucursal = @sucursal);
 
 SELECT PurchaseOrderID INTO #compras FROM Purchasing.PurchaseOrders
 WHERE @par IS NULL OR PurchaseOrderID % 2 <> @par;
