@@ -193,6 +193,12 @@ titulo 'corporativo : vistas Resumen'
 docker cp "$SCRIPT/distribuido/10_vistas_resumen.sql" corporativo:/tmp/10_vistas_resumen.sql >/dev/null
 sql corporativo -I -v NODO=corporativo BASE=WWI_Corporativo -i /tmp/10_vistas_resumen.sql | excluir 'Changed database context|^\s*$'
 
+for nodo in sanjose limon corporativo; do
+    titulo "$nodo : vistas indexadas"
+    docker cp "$SCRIPT/distribuido/12_vistas_indexadas.sql" "$nodo:/tmp/12_vistas_indexadas.sql" >/dev/null
+    sql "$nodo" -I -v "NODO=$nodo" "BASE=${BASE[$nodo]}" -i /tmp/12_vistas_indexadas.sql | excluir 'Changed database context|^\s*$'
+done
+
 # Las estadísticas usan la columna Sucursal de las vistas Resumen: solo se pueden instalar
 # en el corporativo y cuando el 10 ya apuntó los sinónimos a esas vistas
 titulo 'corporativo : estadisticas'
