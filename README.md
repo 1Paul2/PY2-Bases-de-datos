@@ -209,7 +209,25 @@ Las listas de referencia (ciudades, métodos de entrega, categorías...) no se p
 
 **Limitación:** el corporativo es el centro de la replicación. Mientras está caído, San José y Limón no intercambian cambios del catálogo (los guardan y se envían cuando vuelve). Si estuviera caído más de 14 días (retención de la publicación merge), habría que reinicializar las suscripciones.
 
-Dentro de un mismo nodo, los procedimientos de productos usan transacciones; el control optimista con `rowversion` (rechazar un cambio si otro usuario modificó el producto mientras tanto) queda para el bloque de concurrencia y fallas.
+#### 4.3 Concurrencia dentro de un nodo
+
+| Caso | Problema sin control | Cómo se resuelve |
+|------|----------------------|------------------|
+| Dos ventas del mismo producto al mismo tiempo (`SP_InsertSale`) | Con `READ COMMITTED`, las dos leen la misma existencia, las dos pasan la revisión y las dos descuentan: la existencia queda negativa | **Bloqueo pesimista.** Dentro de la transacción, antes de revisar, la venta lee la existencia de sus productos `WITH (UPDLOCK, ROWLOCK)`. Otra venta de esos productos espera ahí hasta el `COMMIT` y después lee la existencia ya descontada; si no alcanza, recibe el error `50015`. Ventas de productos distintos no se esperan entre sí |
+| Dos usuarios editan el mismo producto, o una venta ocurre mientras alguien edita (`SP_UpdateStockItem`) | El último en guardar sobrescribe el cambio del otro sin enterarse, o devuelve la existencia a un valor viejo y "borra" la venta del inventario | **Control optimista.** `SP_GetStockItemDetails` devuelve `Version`: la fecha de última edición del producto (`StockItems.LastEditedWhen`, que también cambia cuando llega una edición replicada desde otro nodo) y la de su existencia (`StockItemHoldings.LastEditedWhen`, que cambia con cada venta). La web la guarda al abrir el formulario y la envía al guardar. El procedimiento vuelve a leer la versión con `UPDLOCK` dentro de la transacción y, si cambió, lanza `50026` («Otro usuario modificó este producto…»); la API responde `409` |
+
+- `Version` viaja como texto (`CONVERT(varchar(27), …, 121)`) porque JavaScript solo guarda milisegundos y `datetime2` tiene 100 nanosegundos: como fecha, la comparación fallaría siempre.
+- La revisión de la versión y la actualización ocurren bajo el mismo bloqueo, así que dos guardados simultáneos no pueden pasar la revisión a la vez.
+- `@Version` es opcional (`NULL` no revisa) para que los scripts de ejemplo sigan funcionando; la web siempre la envía.
+
+**Comprobado:**
+
+| Prueba | Resultado |
+|--------|-----------|
+| Una sesión revisa la existencia de un producto con 5 unidades y tarda 8 s en descontar; mientras tanto otra sesión vende 5 con `SP_InsertSale` | Versión anterior del procedimiento: las dos venden y la existencia queda en **−5**. Versión con `UPDLOCK`: la segunda espera, lee 0 y es rechazada con `50015`; la existencia queda en **0** |
+| Dos guardados con la misma versión | El primero responde `204`; el segundo, `409` |
+| Abrir el producto, registrar una venta de 3 unidades y guardar el formulario | `409`: el formulario traía 87 805 unidades y la existencia real era 87 802; no se pierde la venta |
+| En la web, otro usuario guarda el producto mientras el formulario está abierto | El formulario muestra el mensaje de conflicto y no se cierra; al volver a abrirlo y guardar, se actualiza |
 
 #### 4.1 Ventas de las sucursales en el corporativo (`09_replicaciones_ventas.sql`, `10_vistas_resumen.sql`)
 
@@ -726,7 +744,7 @@ URL base: `http://localhost:3001/api`. Todas las rutas, salvo `/salud` y `/auth/
 | GET | `/productos/grupos` | `SP_GetStockGroups` | — |
 | GET | `/productos/:id` | `SP_GetStockItemDetails` | — |
 | POST | `/productos` | `SP_InsertStockItem` | Cuerpo JSON |
-| PUT | `/productos/:id` | `SP_UpdateStockItem` | Cuerpo JSON |
+| PUT | `/productos/:id` | `SP_UpdateStockItem` | Cuerpo JSON con `Version` (la que devolvió el detalle); `409` si otro usuario modificó el producto |
 | DELETE | `/productos/:id` | `SP_DeleteStockItem` | — |
 
 ### Ventas — `/ventas`
