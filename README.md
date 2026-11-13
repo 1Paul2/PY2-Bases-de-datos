@@ -57,12 +57,24 @@ Las tres bases parten de restaurar `WideWorldImporters-Full.bak` y después se b
 
 El enunciado pide que cada sucursal maneje su propio inventario y facturación. Cada fila pertenece a una sola sucursal.
 
-**Criterio para los datos existentes: el vendedor.** La base tiene 10 vendedores con unas 7 000 facturas cada uno. Cada vendedor se asigna a una sucursal, y cada factura y cada pedido van a la sucursal de quien los vendió. Revisamos que todos los pedidos tienen el mismo vendedor que su factura, así que nunca queda una factura en una sucursal y su pedido en otra.
+**Criterio para los datos existentes: el vendedor.** Cada vendedor se asigna a una sucursal, y cada factura y cada pedido van a la sucursal de quien los vendió.
+
+**El reparto se calcula, no está escrito a mano**, así que sirve para cualquier cantidad de vendedores (`04_fragmentacion_horizontal.sql`):
+
+1. Se toman todos los vendedores que aparecen en las facturas o en los pedidos, con su cantidad de facturas.
+2. Se ordenan de mayor a menor cantidad de facturas (los empates, por `PersonID`).
+3. Cada vendedor va a la sucursal que lleva menos facturas hasta ese momento. Así las dos sucursales quedan con un volumen parecido aunque los vendedores vendan cantidades muy distintas.
+4. El resultado queda en la tabla `dbo.VendedorSucursal` (`PersonID`, `Sucursal`, `Facturas`). Los tres nodos restauran el mismo respaldo, así que calculan el mismo reparto sin coordinarse.
+5. Antes de borrar se valida que ninguna factura ni pedido quede sin sucursal y que ninguna factura quede en una sucursal distinta de la de su pedido; si pasa, el script se detiene con un error (`50110` / `50111`) y no borra nada.
+
+Con los 10 vendedores de la base original queda así (la diferencia es de 2 facturas):
 
 | Sucursal | Vendedores (`PersonID`) | Facturas |
 |----------|-------------------------|---------:|
-| San José | 2 Kayla Woodcock, 3 Hudson Onslow, 6 Sophia Hinton, 7 Amy Trefl, 8 Anthony Grosse | 35 134 |
-| Limón | 13 Hudson Hollinworth, 14 Lily Code, 15 Taj Shand, 16 Archer Lamble, 20 Jack Potter | 35 376 |
+| San José | 7 Amy Trefl, 14 Lily Code, 15 Taj Shand, 16 Archer Lamble, 20 Jack Potter | 35 256 |
+| Limón | 2 Kayla Woodcock, 3 Hudson Onslow, 6 Sophia Hinton, 8 Anthony Grosse, 13 Hudson Hollinworth | 35 254 |
+
+El cálculo se probó también con datos simulados: 11 vendedores, 3, 6 con volúmenes muy desiguales (20 000 a 100 facturas), uno solo y uno que solo tiene pedidos. En todos los casos cada vendedor quedó asignado a una sucursal. El criterio solo reparte los datos que ya existían: una venta nueva se guarda en la sucursal donde está conectado el administrador, sea cual sea el vendedor.
 
 | Tabla | Regla de fragmentación |
 |-------|------------------------|
@@ -81,8 +93,8 @@ El corporativo no guarda ninguna de estas tablas: las estadísticas consolidadas
 
 | Propiedad | Cómo se comprobó |
 |-----------|------------------|
-| Completitud | San José + Limón suman exactamente lo original en las 10 tablas: 35 134 + 35 376 = 70 510 facturas, 113 631 + 114 634 = 228 265 líneas, 1 037 + 1 037 = 2 074 órdenes de compra, y lo mismo en pedidos, pagos, movimientos y existencias |
-| Disyunción | Ninguna factura ni orden de compra está en las dos sucursales (consulta cruzada por linked server) |
+| Completitud | San José + Limón suman exactamente lo original en las 10 tablas: 35 256 + 35 254 = 70 510 facturas, 114 176 + 114 089 = 228 265 líneas, 36 834 + 36 761 = 73 595 pedidos, 48 587 + 48 560 = 97 147 pagos, 118 409 + 118 258 = 236 667 movimientos, 1 037 + 1 037 = 2 074 órdenes de compra, y lo mismo en existencias |
+| Disyunción | Ninguna factura, línea, pedido, pago, movimiento ni orden de compra está en las dos sucursales (consulta cruzada por linked server); cada sucursal solo tiene facturas de sus 5 vendedores |
 | Reconstrucción | La unión de las facturas de ambas sucursales devuelve la tabla original; no quedan líneas, pedidos ni movimientos sin su factura |
 
 **IDs nuevos sin choques:** las secuencias de cada sucursal se reinician en un rango propio, así un ID nunca se repite entre nodos y además indica dónde se creó.
@@ -215,7 +227,7 @@ El corporativo no guarda transacciones propias, pero sus estadísticas deben pod
 - Las vistas `Resumen.vFacturas`, `vLineasFactura`, `vCompras`, `vLineasCompra`, `vMovimientos` y `vExistencias` unen las tablas de las dos sucursales con una columna `Sucursal` (`SJ` o `LI`): una estadística filtra con `WHERE Sucursal = @Sucursal` o toma todo para el consolidado.
 - En el corporativo `Syn_StockItemHoldings` apunta a `Resumen.vExistencias`, que tiene una fila por sucursal. Para que la lista y el detalle de productos no repitan cada producto, los procedimientos de productos leen `dbo.vExistenciasProducto` (creada en `Script/sql/sp_productos.sql`): en las sucursales es su tabla de existencias tal cual; en el corporativo suma las dos sucursales por producto y deja en `NULL` los datos propios de cada bodega (ubicación, costo, niveles de reorden).
 
-**Comprobado:** el corporativo tiene exactamente las mismas filas que cada sucursal en las 12 tablas (por ejemplo, 35 134 facturas de San José y 35 376 de Limón; la vista consolida 70 510). Una venta nueva en San José llega al corporativo en menos de 15 s, con su línea y el cambio de existencias; al borrarla, también se borra allá.
+**Comprobado:** el corporativo tiene exactamente las mismas filas que cada sucursal en las 12 tablas (por ejemplo, 35 256 facturas de San José y 35 254 de Limón; la vista consolida 70 510). Una venta nueva en San José llega al corporativo en menos de 15 s, con su línea y el cambio de existencias; al borrarla, también se borra allá.
 
 **Pendiente:** que los procedimientos de estadísticas lean de estas vistas y reciban el parámetro `@Sucursal` (San José, Limón o consolidado). Las vistas indexadas no admiten `UNION ALL`, así que la parte "materializada" son las tablas `Resumen.*`: copias físicas en el corporativo que la replicación mantiene al día.
 
