@@ -24,6 +24,11 @@ IF @base IS NOT NULL
                          WHERE object_id IN (OBJECT_ID(N''Sales.Customers''), OBJECT_ID(N''Purchasing.Suppliers''), OBJECT_ID(N''Application.People''))
                            AND name IN (N''PhoneNumber'', N''EmailAddress'', N''BankAccountNumber'', N''DeliveryAddressLine1'', N''DeliveryLocation''));
     PRINT CONCAT(''  Datos     : '', @fact, '' facturas, '', @ped, '' pedidos, '', @oc, '' ordenes de compra, existencias '', ISNULL(@exist, 0));
+    IF OBJECT_ID(N''dbo.VendedorSucursal'') IS NOT NULL AND OBJECT_ID(N''Sales.CustomersSensible'') IS NULL
+        EXEC (N''DECLARE @n int, @f int, @v nvarchar(400);
+              SELECT @n = COUNT(*), @f = SUM(Facturas), @v = STRING_AGG(CAST(PersonID AS varchar(10)), '''', '''') WITHIN GROUP (ORDER BY PersonID)
+              FROM dbo.VendedorSucursal WHERE Sucursal = CASE DB_NAME() WHEN N''''WWI_SanJose'''' THEN ''''SJ'''' ELSE ''''LI'''' END;
+              PRINT CONCAT(''''  Vendedores: '''', @n, '''' ('''', @v, ''''), '''', @f, '''' facturas al repartir'''');'');
     IF OBJECT_ID(N''Sales.CustomersSensible'') IS NOT NULL
         EXEC (N''DECLARE @c int = (SELECT COUNT(*) FROM Sales.CustomersSensible), @p int = (SELECT COUNT(*) FROM Purchasing.SuppliersSensible), @g int = (SELECT COUNT(*) FROM Application.PeopleSensible);
               PRINT CONCAT(''''  Sensibles : '''', @c, '''' clientes, '''', @p, '''' proveedores, '''', @g, '''' personas (fragmento sensible)'''');'');
