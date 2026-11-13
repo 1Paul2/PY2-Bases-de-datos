@@ -119,7 +119,7 @@ BEGIN
     DECLARE @sufijo nvarchar(3) = CASE N'$(NODO)' WHEN N'sanjose' THEN N'_SJ' ELSE N'_LI' END;
     DECLARE @articulo sysname, @esquema sysname, @tabla sysname, @columnas nvarchar(max),
             @destino sysname, @ins nvarchar(255), @upd nvarchar(255), @del nvarchar(255),
-            @columna sysname, @operacion nvarchar(4);
+            @columna sysname, @operacion nvarchar(4), @precreacion nvarchar(10);
 
     -- Nombre en el corporativo, tabla de origen y columnas que viajan
     DECLARE c CURSOR LOCAL FAST_FORWARD FOR
@@ -141,6 +141,9 @@ BEGIN
     FETCH NEXT FROM c INTO @articulo, @esquema, @tabla, @columnas;
     WHILE @@FETCH_STATUS = 0
     BEGIN
+        SET @precreacion = CASE WHEN @articulo IN (N'Facturas', N'LineasFactura', N'Compras', N'LineasCompra')
+                                THEN N'delete' ELSE N'drop' END;
+
         IF NOT EXISTS (SELECT 1 FROM dbo.sysarticles a JOIN dbo.syspublications p ON p.pubid = a.pubid
                        WHERE p.name = @pub AND a.name = @articulo)
         BEGIN
@@ -153,7 +156,7 @@ BEGIN
             EXEC sp_addarticle @publication = @pub, @article = @articulo,
                 @source_owner = @esquema, @source_object = @tabla,
                 @destination_owner = N'Resumen', @destination_table = @destino,
-                @vertical_partition = N'true', @pre_creation_cmd = N'drop',
+                @vertical_partition = N'true', @pre_creation_cmd = @precreacion,
                 @ins_cmd = @ins, @upd_cmd = @upd, @del_cmd = @del;
 
             -- Las columnas de la lista se agregan; las demás se quitan
@@ -176,10 +179,10 @@ BEGIN
             PRINT CONCAT('Articulo ', @esquema, '.', @tabla, ' -> Resumen.', @destino);
         END
         ELSE IF EXISTS (SELECT 1 FROM dbo.sysarticles a JOIN dbo.syspublications p ON p.pubid = a.pubid
-                        WHERE p.name = @pub AND a.name = @articulo AND a.pre_creation_cmd <> 1)
+                        WHERE p.name = @pub AND a.name = @articulo AND a.pre_creation_cmd = 0)
         BEGIN
             EXEC sp_changearticle @publication = @pub, @article = @articulo,
-                @property = N'pre_creation_cmd', @value = N'drop', @force_invalidate_snapshot = 1;
+                @property = N'pre_creation_cmd', @value = @precreacion, @force_invalidate_snapshot = 1;
             EXEC sp_articleview @publication = @pub, @article = @articulo, @force_invalidate_snapshot = 1;
             PRINT CONCAT('Articulo ', @articulo, ' cambiado para usar snapshot');
         END
