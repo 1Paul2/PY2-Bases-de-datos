@@ -33,7 +33,7 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER PROCEDURE SP_GetSupplierDetails
+CREATE OR ALTER PROCEDURE SP_GetSupplierDetails_ConContacto
     @SupplierID INT
 AS
 BEGIN
@@ -70,7 +70,8 @@ BEGIN
     SS.BankAccountName as BankAccountName,
     SS.BankAccountNumber as BankAccountNumber,
     S.PaymentDays as PaymentDays,
-    S.LastEditedBy as LastEditedBy
+    S.LastEditedBy as LastEditedBy,
+    CAST(1 AS bit) as ContactoDisponible
     FROM Syn_Suppliers S
     INNER JOIN Syn_SuppliersSensible SS ON SS.SupplierID = S.SupplierID
     INNER JOIN Syn_SupplierCategories SC ON SC.SupplierCategoryID = S.SupplierCategoryID
@@ -81,5 +82,73 @@ BEGIN
     LEFT JOIN Syn_Cities PC ON PC.CityID = S.PostalCityID
 
     WHERE S.SupplierID = @SupplierID
+END;
+GO
+
+-- Mismas columnas sin el fragmento sensible: se usa cuando el corporativo no responde
+CREATE OR ALTER PROCEDURE SP_GetSupplierDetails_SinContacto
+    @SupplierID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @NoDisponible NVARCHAR(60) = N'No disponible: el corporativo no responde';
+
+    SELECT S.SupplierReference as SupplierReference,
+    S.SupplierCategoryID as SupplierCategoryID,
+    CAST(NULL AS INT) as PrimaryContactPersonID,
+    CAST(NULL AS INT) as AlternateContactPersonID,
+    S.DeliveryMethodID as DeliveryMethodID,
+    S.DeliveryCityID as DeliveryCityID,
+    S.PostalCityID as PostalCityID,
+    S.SupplierName as SupplierName,
+    SC.SupplierCategoryName as SupplierCategoryName,
+    @NoDisponible as PrimaryContactName,
+    @NoDisponible as AlternateContactName,
+    ISNULL(DM.DeliveryMethodName, 'No indica') as DeliveryMethodName,
+    C.CityName as DeliveryCityName,
+    PC.CityName as PostalCityName,
+    @NoDisponible as DeliveryPostalCode,
+    @NoDisponible as PostalPostalCode,
+    @NoDisponible as PhoneNumber,
+    CAST(NULL AS NVARCHAR(20)) as FaxNumber,
+    CAST(NULL AS NVARCHAR(256)) as WebsiteURL,
+    @NoDisponible as DeliveryAddressLine1,
+    CAST(NULL AS NVARCHAR(60)) as DeliveryAddressLine2,
+    @NoDisponible as DeliveryAddressLine2Texto,
+    @NoDisponible as PostalAddressLine1,
+    CAST(NULL AS NVARCHAR(60)) as PostalAddressLine2,
+    @NoDisponible as PostalAddressLine2Texto,
+    @NoDisponible as FaxTexto,
+    @NoDisponible as WebsiteTexto,
+    CAST(NULL AS FLOAT) as DeliveryLatitude,
+    CAST(NULL AS FLOAT) as DeliveryLongitude,
+    @NoDisponible as BankAccountBranch,
+    @NoDisponible as BankAccountName,
+    @NoDisponible as BankAccountNumber,
+    S.PaymentDays as PaymentDays,
+    S.LastEditedBy as LastEditedBy,
+    CAST(0 AS bit) as ContactoDisponible
+    FROM Syn_Suppliers S
+    INNER JOIN Syn_SupplierCategories SC ON SC.SupplierCategoryID = S.SupplierCategoryID
+    LEFT JOIN Syn_DeliveryMethods DM ON S.DeliveryMethodID = DM.DeliveryMethodID
+    LEFT JOIN Syn_Cities C ON C.CityID = S.DeliveryCityID
+    LEFT JOIN Syn_Cities PC ON PC.CityID = S.PostalCityID
+    WHERE S.SupplierID = @SupplierID
+END;
+GO
+
+-- Si el corporativo no responde, devuelve la parte de la sucursal en vez de fallar.
+-- El error del linked server puede ocurrir al compilar la consulta remota, por eso va en otro procedimiento
+CREATE OR ALTER PROCEDURE SP_GetSupplierDetails
+    @SupplierID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    BEGIN TRY
+        EXEC dbo.SP_GetSupplierDetails_ConContacto @SupplierID = @SupplierID;
+    END TRY
+    BEGIN CATCH
+        EXEC dbo.SP_GetSupplierDetails_SinContacto @SupplierID = @SupplierID;
+    END CATCH
 END;
 GO

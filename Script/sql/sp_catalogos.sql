@@ -122,7 +122,7 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER PROCEDURE SP_SearchCustomers
+CREATE OR ALTER PROCEDURE SP_SearchCustomers_ConContacto
     @Criterio NVARCHAR(100) = NULL,
     @Cantidad INT = 20
 AS
@@ -139,6 +139,39 @@ BEGIN
     INNER JOIN Syn_People P ON P.PersonID = S.PrimaryContactPersonID
     WHERE @Criterio IS NULL OR @Criterio = '' OR C.CustomerName LIKE '%' + @Criterio + '%'
     ORDER BY C.CustomerName;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE SP_SearchCustomers_SinContacto
+    @Criterio NVARCHAR(100) = NULL,
+    @Cantidad INT = 20
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT TOP (@Cantidad)
+        C.CustomerID,
+        C.CustomerName,
+        C.DeliveryMethodID,
+        CAST(NULL AS INT) AS PrimaryContactPersonID,
+        CAST(NULL AS NVARCHAR(50)) AS PrimaryContactName
+    FROM Syn_Customers C
+    WHERE @Criterio IS NULL OR @Criterio = '' OR C.CustomerName LIKE '%' + @Criterio + '%'
+    ORDER BY C.CustomerName;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE SP_SearchCustomers
+    @Criterio NVARCHAR(100) = NULL,
+    @Cantidad INT = 20
+AS
+BEGIN
+    SET NOCOUNT ON;
+    BEGIN TRY
+        EXEC dbo.SP_SearchCustomers_ConContacto @Criterio = @Criterio, @Cantidad = @Cantidad;
+    END TRY
+    BEGIN CATCH
+        EXEC dbo.SP_SearchCustomers_SinContacto @Criterio = @Criterio, @Cantidad = @Cantidad;
+    END CATCH
 END;
 GO
 
