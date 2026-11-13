@@ -75,6 +75,11 @@ IF @base IS NOT NULL
         DECLARE @sj bigint = (SELECT SUM(rows) FROM sys.partitions WHERE object_id = OBJECT_ID(N''Resumen.Facturas_SJ'') AND index_id IN (0, 1));
         DECLARE @li bigint = (SELECT SUM(rows) FROM sys.partitions WHERE object_id = OBJECT_ID(N''Resumen.Facturas_LI'') AND index_id IN (0, 1));
         PRINT CONCAT(''  Resumen   : '', @tablas, '' tablas, '', @vistas, '' vistas, facturas SJ '', ISNULL(@sj, 0), '' / LI '', ISNULL(@li, 0));
+        DECLARE @indexadas int = (SELECT COUNT(*) FROM sys.views v JOIN sys.indexes i ON i.object_id = v.object_id AND i.index_id = 1
+                                  WHERE v.schema_id = SCHEMA_ID(N''Resumen''));
+        DECLARE @filasIdx bigint = (SELECT SUM(p.rows) FROM sys.views v JOIN sys.partitions p ON p.object_id = v.object_id AND p.index_id = 1
+                                    WHERE v.schema_id = SCHEMA_ID(N''Resumen''));
+        PRINT CONCAT(''  Indexadas : '', @indexadas, '' vistas con indice clúster ('', ISNULL(@filasIdx, 0), '' filas materializadas)'');
     END
     IF OBJECT_ID(N''Sales.CustomersSensible'') IS NULL AND OBJECT_ID(N''dbo.syspublications'') IS NOT NULL
     BEGIN
