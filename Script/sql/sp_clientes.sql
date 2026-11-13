@@ -1,4 +1,4 @@
-CREATE OR ALTER PROCEDURE SP_CLIENTES
+CREATE OR ALTER PROCEDURE SP_CLIENTES_ConContacto
     @Nombre VARCHAR(100)
 AS
 BEGIN 
@@ -48,7 +48,8 @@ BEGIN
     S.Latitud AS Latitud,
     S.Longitud AS Longitud,
     S.Latitud AS DeliveryLatitude,
-    S.Longitud AS DeliveryLongitude
+    S.Longitud AS DeliveryLongitude,
+    CAST(1 AS bit) AS ContactoDisponible
         FROM Syn_Customers SC
         INNER JOIN Syn_CustomersSensible S ON S.CustomerID = SC.CustomerID
         INNER JOIN Syn_CustomerCategories SCC ON SCC.CustomerCategoryID = SC.CustomerCategoryID
@@ -72,6 +73,86 @@ BEGIN
         S.Latitud,
         S.Longitud
     ORDER BY SC.CustomerName ASC
+END;
+GO
+
+CREATE OR ALTER PROCEDURE SP_CLIENTES_SinContacto
+    @Nombre VARCHAR(100)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @NoDisponible NVARCHAR(60) = N'No disponible: el corporativo no responde';
+
+    SELECT SC.CustomerID AS CustomerID,
+    SC.CustomerCategoryID AS CustomerCategoryID,
+    SC.BuyingGroupID AS BuyingGroupID,
+    CAST(NULL AS INT) AS PrimaryContactPersonID,
+    CAST(NULL AS INT) AS AlternateContactPersonID,
+    SC.BillToCustomerID AS BillToCustomerID,
+    SC.DeliveryMethodID AS DeliveryMethodID,
+    SC.DeliveryCityID AS DeliveryCityID,
+    SC.PostalCityID AS PostalCityID,
+    SC.CustomerName as Nombre,
+    SCC.CustomerCategoryName as Categoría,
+    ISNULL(SB.BuyingGroupName, 'No pertenece a un grupo de compra') as Grupo_de_compra,
+    @NoDisponible as Contacto_Primario,
+    @NoDisponible as Contacto_Secundario,
+    CAST(NULL AS NVARCHAR(50)) AS AlternateContactName,
+    BillTo.CustomerName AS Cliente_por_facturar,
+    ADM.DeliveryMethodName as Métodos_de_entrega,
+    AC.CityName as Ciudad_de_entrega,
+    @NoDisponible as Código_postal,
+    PC.CityName as Ciudad_postal,
+    @NoDisponible AS Telefono,
+    @NoDisponible AS Fax,
+    SC.PaymentDays as Días_de_gracia_para_pagar,
+    @NoDisponible AS Sitio_web,
+    @NoDisponible AS Direccion_Entrega_1,
+    @NoDisponible AS Direccion_Entrega_2,
+    @NoDisponible AS Direccion_Postal_1,
+    @NoDisponible AS Direccion_Postal_2,
+    CAST(NULL AS NVARCHAR(10)) AS PostalPostalCode,
+    CAST(NULL AS NVARCHAR(10)) AS DeliveryPostalCode,
+    CAST(NULL AS NVARCHAR(20)) AS PhoneNumber,
+    CAST(NULL AS NVARCHAR(20)) AS FaxNumber,
+    SC.PaymentDays AS PaymentDays,
+    SC.StandardDiscountPercentage AS StandardDiscountPercentage,
+    SC.IsStatementSent AS IsStatementSent,
+    SC.IsOnCreditHold AS IsOnCreditHold,
+    CAST(NULL AS NVARCHAR(256)) AS WebsiteURL,
+    CAST(NULL AS NVARCHAR(60)) AS DeliveryAddressLine1,
+    CAST(NULL AS NVARCHAR(60)) AS DeliveryAddressLine2,
+    CAST(NULL AS NVARCHAR(60)) AS PostalAddressLine1,
+    CAST(NULL AS NVARCHAR(60)) AS PostalAddressLine2,
+    SC.AccountOpenedDate AS AccountOpenedDate,
+    CAST(NULL AS FLOAT) AS Latitud,
+    CAST(NULL AS FLOAT) AS Longitud,
+    CAST(NULL AS FLOAT) AS DeliveryLatitude,
+    CAST(NULL AS FLOAT) AS DeliveryLongitude,
+    CAST(0 AS bit) AS ContactoDisponible
+        FROM Syn_Customers SC
+        INNER JOIN Syn_CustomerCategories SCC ON SCC.CustomerCategoryID = SC.CustomerCategoryID
+        LEFT JOIN Syn_BuyingGroups SB ON SB.BuyingGroupID = SC.BuyingGroupID
+        LEFT JOIN Syn_Customers BillTo ON BillTo.CustomerID = SC.BillToCustomerID
+        INNER JOIN Syn_DeliveryMethods ADM ON ADM.DeliveryMethodID = SC.DeliveryMethodID
+        LEFT JOIN Syn_Cities AC ON AC.CityID = SC.DeliveryCityID
+        LEFT JOIN Syn_Cities PC ON PC.CityID = SC.PostalCityID
+    WHERE SC.CustomerName = @Nombre
+    ORDER BY SC.CustomerName ASC
+END;
+GO
+
+CREATE OR ALTER PROCEDURE SP_CLIENTES
+    @Nombre VARCHAR(100)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    BEGIN TRY
+        EXEC dbo.SP_CLIENTES_ConContacto @Nombre = @Nombre;
+    END TRY
+    BEGIN CATCH
+        EXEC dbo.SP_CLIENTES_SinContacto @Nombre = @Nombre;
+    END CATCH
 END;
 GO
 

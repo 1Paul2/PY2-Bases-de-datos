@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { cerrarSesion, obtenerSesion } from './Api';
 import { modulosPermitidos, NOMBRE_SUCURSAL } from './permisos';
 import Login from './pages/Login';
+import AvisoNodos from './components/AvisoNodos';
 import Inicio from './pages/Inicio';
 import Clientes from './pages/Clientes';
 import Proveedores from './pages/Proveedores';
@@ -44,13 +45,14 @@ export default function App() {
       <button type="button" onClick={cerrarSesion}>Cerrar sesión</button>
     </div>
   );
+  const barra = <>{salir}<AvisoNodos /></>;
 
   if (modulo === 'inicio' || !permitidos.includes(modulo)) {
-    return <>{salir}<Inicio onNavegar={setModulo} /></>;
+    return <>{barra}<Inicio onNavegar={setModulo} /></>;
   }
   return (
     <div className="App">
-      {salir}
+      {barra}
       <header className="App-header">
         <div
           className="cabecera-marca"

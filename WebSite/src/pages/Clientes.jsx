@@ -302,6 +302,9 @@ export default function Clientes() {
             </button>
 
             <h2>Detalle del cliente</h2>
+            {detalle.ContactoDisponible === false && (
+              <p className="aviso-detalle" role="status">El corporativo no responde: se muestran los datos de la sucursal; los datos de contacto no están disponibles.</p>
+            )}
 
             <dl>
               {camposDetalle.map(([etiqueta, clave]) => {

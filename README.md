@@ -205,7 +205,7 @@ Las listas de referencia (ciudades, métodos de entrega, categorías...) no se p
 | `admin.sj` inicia sesión en San José | Funciona con la copia replicada y la contraseña cifrada |
 | Borrar en San José un producto con ventas, o en Limón uno que San José tiene en bodega | Rechazado con mensaje claro |
 | Limón apagado mientras San José y el corporativo hacen cambios | Al encenderlo recibe todos los cambios |
-| Corporativo apagado | San José sigue vendiendo, editando productos, listando clientes e iniciando sesión; al volver, los cambios llegan al corporativo y a Limón. El detalle de cliente falla (sus datos de contacto están en el corporativo) |
+| Corporativo apagado | San José sigue vendiendo, editando productos, listando clientes e iniciando sesión; al volver, los cambios llegan al corporativo y a Limón. El detalle de cliente y de proveedor muestra solo los datos de la sucursal (sección 4.4) |
 
 **Limitación:** el corporativo es el centro de la replicación. Mientras está caído, San José y Limón no intercambian cambios del catálogo (los guardan y se envían cuando vuelve). Si estuviera caído más de 14 días (retención de la publicación merge), habría que reinicializar las suscripciones.
 
@@ -273,6 +273,34 @@ Una vista con `UNION ALL` no se puede indexar, así que se materializa cada sucu
 | Se mantienen con la replicación | Una venta nueva en San José aparece en `ivVentasMes_SJ` en 8 s; al borrarla, la fila del mes desaparece en 8 s |
 | Reinicialización | Reinicializar la suscripción completa de San José vacía y vuelve a llenar las tablas en 27 s; las vistas indexadas siguen existiendo y coinciden con el cálculo desde cero |
 
+#### 4.4 Plan de fallas: qué pasa si un nodo no responde
+
+Cómo responde el sistema, en cualquier caso:
+
+- **Tiempos límite:** los linked servers esperan 5 s para conectar y 30 s por consulta; la API espera 5 s para conectar a un nodo. Un nodo caído responde con error en vez de dejar la pantalla colgada.
+- **La API sigue funcionando:** crea la conexión a cada nodo al primer uso. Si un nodo no responde, solo quien lo necesita recibe `503` («El nodo … no responde»); cuando vuelve, la siguiente petición se reconecta sin reiniciar la API.
+- **Inicio de sesión:** se intenta en el corporativo y, si no responde, en San José y luego en Limón, que tienen la tabla de usuarios replicada.
+- **Aviso en la web:** `GET /api/estado-nodos` prueba los tres nodos (conexión de 3 s, resultado guardado 10 s). La web lo consulta cada 20 s y apenas recibe un `503`, y muestra solo los nodos caídos que afectan al usuario, con lo que deja de funcionar para él.
+- **Degradación en lugar de error:** los procedimientos que leen datos de contacto del corporativo (`SP_CLIENTES`, `SP_GetSupplierDetails`, `SP_SearchCustomers`) llaman primero a su versión `_ConContacto` dentro de un `TRY`; si el linked server falla, el `CATCH` llama a la versión `_SinContacto`, que devuelve las mismas columnas con los datos de la sucursal, «No disponible: el corporativo no responde» en los de contacto y `ContactoDisponible = 0`. La consulta remota va en otro procedimiento porque el error del linked server puede ocurrir al compilarla, y un `TRY/CATCH` del mismo nivel no atrapa errores de compilación.
+- **Recuperación:** la replicación guarda los cambios hechos durante la caída y los entrega cuando el nodo vuelve.
+
+| Nodo caído | Sigue funcionando | No funciona | Al volver |
+|------------|-------------------|-------------|-----------|
+| **Corporativo** | Las dos sucursales: iniciar sesión, ventas (consultar y crear), productos (consultar, crear, editar y borrar), lista de clientes y proveedores, y su detalle con los datos de la sucursal | Datos de contacto y bancarios (detalle de cliente y proveedor, contacto propuesto al crear una venta); estadísticas; administración de clientes y proveedores. San José y Limón no intercambian cambios de productos mientras tanto | Los cambios de productos de cada sucursal llegan al corporativo y a la otra sucursal, y las ventas llegan a las tablas `Resumen` |
+| **San José o Limón** | La otra sucursal, sin cambios. El corporativo: estadísticas, con los datos de esa sucursal hasta la última sincronización | Todo lo del administrador de esa sucursal (`503` y aviso) | Recibe los cambios de productos hechos mientras estaba caída y envía al corporativo sus ventas pendientes |
+
+- Mientras el corporativo está caído, cada detalle de cliente o proveedor tarda entre 8 y 12 s, porque el proveedor del linked server reintenta la conexión antes de rendirse; después se muestra la versión de la sucursal.
+- Si un nodo estuviera caído más de 14 días (retención de la replicación merge), habría que reinicializar sus suscripciones.
+
+**Comprobado** (con `docker stop` / `docker start`):
+
+| Prueba | Resultado |
+|--------|-----------|
+| Corporativo apagado, `admin.sj` | Inicia sesión por San José. Detalle de cliente y de proveedor con los datos de la sucursal y `ContactoDisponible = 0` (8 a 12 s); buscador de clientes sin contacto propuesto; se crea una venta y se edita un producto; la web muestra el aviso del corporativo y el aviso dentro del detalle |
+| Corporativo de vuelta | La edición del producto llega al corporativo en segundos y a Limón en 72 s; la venta llega a `Resumen.Facturas_SJ` en segundos; los detalles vuelven completos y el aviso desaparece solo |
+| Limón apagado | `admin.li` inicia sesión por el corporativo y recibe `503` con el aviso de su sucursal; `admin.sj` sigue igual; el corporativo consulta las estadísticas de Limón con los datos que ya tenía y ve el aviso de Limón |
+| Limón de vuelta | `admin.li` vuelve a trabajar sin reiniciar la API |
+
 ### 5. Nombres
 
 | Elemento | Nombre |
@@ -292,7 +320,7 @@ Una vista con `UNION ALL` no se puede indexar, así que se materializa cada sucu
 ### 6. Riesgos a revisar en los bloques siguientes
 
 - `StockItems`, `Customers`, `Suppliers` y `People` eran **tablas temporales** y la replicación no las acepta. Resuelto en `07_preparar_replicacion.sql`: se desactiva el historial de las tablas publicadas (sección 4).
-- Si el corporativo no responde, el detalle de cliente y de proveedor en las sucursales falla, porque sus datos de contacto viven allá. Se resuelve en el bloque de fallas.
+- Si el corporativo no responde, el detalle de cliente y de proveedor en las sucursales fallaba, porque sus datos de contacto viven allá. Resuelto: los procedimientos devuelven la parte de la sucursal y lo indican (sección 4.4).
 - La tabla de usuarios se replica con la contraseña ya encriptada, así que la llave simétrica debe crearse igual en los tres nodos (mismo `KEY_SOURCE` e `IDENTITY_VALUE`). Resuelto en `06_seguridad.sql` (sección 7.1).
 
 ### 7. Roles
@@ -773,6 +801,12 @@ Solo para el rol corporativo. Las 10 rutas aceptan además `&sucursal=SJ` o `&su
 | 8 | `/estadisticas/seguimiento-proveedores` | `sp_seguimiento_compras_proveedor` | `?proveedor=` `&anio=` `&mes=` `&categoriaId=` `&subcategoriaId=` |
 | 9 | `/estadisticas/rotacion` | `sp_rotacion_inventario` | `?anio=` `&categoria=` `&proveedor=` `&categoriaId=` `&subcategoriaId=` |
 | 10 | `/estadisticas/envio-favorito` | `sp_metodo_envio_favorito` | `?anio=` `&mes=` `&catCliente=` `&catProducto=` `&producto=` `&soloFavorito=` |
+
+### Estado de los nodos — `/estado-nodos`
+
+| Método | Ruta | Respuesta |
+|--------|------|-----------|
+| GET | `/estado-nodos` | `{ nodos: [{ nodo, responde, ms }], revisado }` para el corporativo, San José y Limón (sección 4.4) |
 
 ### Catálogos — `/catalogos`
 

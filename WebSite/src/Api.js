@@ -43,6 +43,7 @@ async function llamar(ruta, opciones = {}) {
     cerrarSesion();
     throw new Error(json.error || 'Inicie sesión para continuar.');
   }
+  if (r.status === 503) window.dispatchEvent(new Event('nodo-caido'));
   if (!r.ok || json.error) {
     throw new Error(json.error || 'La operación no pudo completarse');
   }

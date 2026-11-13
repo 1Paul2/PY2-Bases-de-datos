@@ -19,6 +19,7 @@ app.get('/api/salud', (req, res) => res.json({ ok: true }));
 
 app.use('/api/auth', auth);
 app.use('/api', autenticar);
+app.use('/api/estado-nodos', require('./routes/estado'));
 
 for (const modulo of ['clientes', 'productos', 'proveedores', 'ventas', 'estadisticas', 'catalogos']) {
   app.use(`/api/${modulo}`, permitir(modulo), require(`./routes/${modulo}`));
