@@ -1,558 +1,441 @@
-# Sistema de Gestión Wide World Importers
+# Wide World Importers distribuido
 
-**Proyecto 1 – Bases de Datos 2**
+**Proyecto 2 – Bases de Datos II: diseño e implementación de una base de datos distribuida**
 
-Aplicación web para gestionar y consultar la base de datos de ejemplo **WideWorldImporters** de Microsoft. Toda la búsqueda, filtrado, agrupación y cálculo de datos se hace en **SQL Server** mediante procedimientos almacenados. La API y la aplicación web solo envían parámetros y muestran los resultados.
+La cadena Wide World Importers tiene dos sucursales, **San José** y **Limón**, y una oficina **corporativa** en Plaza Roble, Escazú. Cada sucursal tiene su propia base de datos, con su propio sistema operativo y motor, y maneja su inventario y su facturación. El corporativo guarda los datos sensibles de clientes y proveedores y supervisa a las dos sucursales mediante estadísticas por sucursal o consolidadas. La aplicación web y la API son las del Proyecto 1, adaptadas para trabajar con los tres nodos.
 
----
-## Estado Proyecto
-
-Terminado 100%
-
----
-
-## Integrantes
-
-| Nombre | Carné |
-|--------|-------|
+| Integrante | Carné |
+|------------|-------|
 | Poll Garro Vargas | 2024129001 |
 | Angelo Piedra Castro | 2024101262 |
 
 ---
 
-## Video de demostración
-
-[Ver video en YouTube](https://www.youtube.com/watch?v=H7Icamc5sJA)
-
----
-
 ## Contenido
 
-1. [Diseño distribuido (Proyecto 2)](#diseño-distribuido-proyecto-2)
-2. [Arquitectura](#arquitectura)
-3. [Tecnologías utilizadas](#tecnologías-utilizadas)
-4. [Estructura del repositorio](#estructura-del-repositorio)
-5. [Instalación y ejecución](#instalación-y-ejecución)
-6. [Objetivos alcanzados](#objetivos-alcanzados)
-7. [Objetivos no alcanzados y decisiones](#objetivos-no-alcanzados-y-decisiones)
-8. [Referencia de la API](#referencia-de-la-api)
+1. [Resultados](#1-resultados)
+2. [Arquitectura distribuida](#2-arquitectura-distribuida)
+3. [Diseño de la base de datos distribuida](#3-diseño-de-la-base-de-datos-distribuida)
+   - [3.1 Fragmentación](#31-fragmentación)
+   - [3.2 Asignación](#32-asignación)
+   - [3.3 Replicación](#33-replicación)
+   - [3.4 Vistas materializadas del corporativo](#34-vistas-materializadas-del-corporativo)
+   - [3.5 Concurrencia](#35-concurrencia)
+   - [3.6 Seguridad y encriptación](#36-seguridad-y-encriptación)
+   - [3.7 Plan de fallas](#37-plan-de-fallas)
+4. [Roles](#4-roles)
+5. [Aplicación web](#5-aplicación-web)
+6. [API](#6-api)
+7. [Instalación y ejecución](#7-instalación-y-ejecución)
+8. [Estructura del repositorio](#8-estructura-del-repositorio)
+9. [Decisiones sobre los datos](#9-decisiones-sobre-los-datos)
+10. [Referencia de la API](#10-referencia-de-la-api)
 
 ---
 
-## Diseño distribuido (Proyecto 2)
+## 1. Resultados
 
-### 1. Resumen
+**Estado: terminado.** Todos los requisitos del enunciado están implementados y se probaron en los contenedores. Cada sección de este documento incluye las pruebas que se hicieron y sus resultados.
 
-| Nodo | Base | Qué guarda |
-|------|------|------------|
-| **Corporativo** (Plaza Roble, Escazú) | `WWI_Corporativo` | Datos sensibles de clientes, proveedores y personas; maestro de clientes, proveedores y usuarios; resúmenes para las estadísticas |
-| **San José** | `WWI_SanJose` | Catálogo compartido (sin datos sensibles); su propio inventario, ventas y compras |
-| **Limón** | `WWI_Limon` | Igual que San José, con sus propios datos |
+| Requisito del enunciado | Estado | Dónde |
+|-------------------------|:------:|-------|
+| Tres nodos; las sucursales con tecnología independiente (sistema operativo y motor) | Completo | [2](#2-arquitectura-distribuida) |
+| Rol Administrador: consulta clientes, proveedores, productos y las facturas de su sucursal; crea, modifica y elimina productos | Completo | [4](#4-roles) |
+| Rol Corporativo: consulta las estadísticas de cada sucursal | Completo | [4](#4-roles), [5](#5-aplicación-web) |
+| Tabla de usuarios con iduser, username, password, fullname, active, rol, email y hiredate, sin página de gestión de usuarios | Completo | [3.6](#36-seguridad-y-encriptación) |
+| Contraseña cifrada con la funcionalidad nativa de SQL Server | Completo | [3.6](#36-seguridad-y-encriptación) |
+| Relacionar los usuarios de la aplicación con los usuarios de la base de datos | Completo | [3.6](#36-seguridad-y-encriptación) |
+| Cada cambio en productos (y sus tablas relacionadas) se replica a todas las bases | Completo | [3.3](#33-replicación) |
+| Mismo catálogo de productos, clientes y proveedores; inventario y facturación propios en cada sucursal | Completo | [3.1](#31-fragmentación) |
+| Datos sensibles de clientes y proveedores en el corporativo | Completo | [3.1](#31-fragmentación) |
+| Diseño y justificación de la fragmentación y de la asignación | Completo | [3.1](#31-fragmentación), [3.2](#32-asignación) |
+| Filtro de las estadísticas por sucursal o consolidado | Completo | [3.3](#33-replicación), [5](#5-aplicación-web) |
+| Vistas materializadas en el corporativo | Completo | [3.4](#34-vistas-materializadas-del-corporativo) |
+| Concurrencia, sobre todo en catálogos modificados desde varias sucursales | Completo | [3.5](#35-concurrencia) |
+| Cómo responder si un nodo no responde | Completo | [3.7](#37-plan-de-fallas) |
+| Se mantienen las funcionalidades del Proyecto 1, con la misma infraestructura (SQL Server, Node.js y React) | Completo | [5](#5-aplicación-web), [6](#6-api) |
+| Scripts de las bases de datos (corporativo y sucursales) | Completo | [7](#7-instalación-y-ejecución), [8](#8-estructura-del-repositorio) |
+| Replicación con la funcionalidad de SQL Server | Completo | [3.3](#33-replicación) |
 
-Las tres bases parten de restaurar `WideWorldImporters-Full.bak` y después se borra en cada nodo lo que no le corresponde. Así se conservan las llaves, los tipos y las relaciones originales, y los procedimientos del Proyecto 1 siguen funcionando con cambios mínimos.
+### Limitaciones conocidas y por qué
 
-### 2. Fragmentación
+- **El corporativo es el centro de la replicación.** Mientras está caído, San José y Limón no intercambian cambios de productos: los guardan y se envían cuando vuelve. Se eligió así porque el corporativo ya es el maestro de clientes, proveedores y usuarios, y un solo distribuidor es más simple de operar y de explicar. Si estuviera caído más de 14 días (retención de la replicación merge), habría que reinicializar las suscripciones.
+- **Con el corporativo caído, cada detalle de cliente o proveedor tarda de 8 a 12 s** antes de mostrar los datos de la sucursal, porque el proveedor del linked server reintenta la conexión antes de rendirse. Bajar el tiempo límite haría que en una red lenta se perdieran datos de contacto que sí estaban disponibles.
+- **Con el corporativo caído, al crear una venta no se propone el contacto del cliente** (ese dato es sensible y vive allá). El administrador lo elige en el formulario.
+- **El reparto de vendedores entre sucursales solo se aplica a los datos originales.** Una venta nueva se guarda en la sucursal donde está conectado el administrador, sea cual sea el vendedor.
+- **`Script/sql/ejemplo_ejecucion.sql` es del Proyecto 1** y está pensado para una sola base: corre las estadísticas, que ahora solo existen en el corporativo, y crea ventas, que ahora solo se crean en las sucursales. No se adaptó a los nodos; las pruebas del Proyecto 2 se hicieron con la API, la web y consultas directas a cada nodo.
 
-#### 2.1 Horizontal: inventario, ventas y compras por sucursal
+---
 
-El enunciado pide que cada sucursal maneje su propio inventario y facturación. Cada fila pertenece a una sola sucursal.
+## 2. Arquitectura distribuida
 
-**Criterio para los datos existentes: el vendedor.** Cada vendedor se asigna a una sucursal, y cada factura y cada pedido van a la sucursal de quien los vendió.
+```
+                         ┌───────────────────────────┐
+                         │  WebSite (React + Vite)   │
+                         │  login, menú por rol,     │
+                         │  aviso de nodos caídos    │
+                         └─────────────┬─────────────┘
+                                       │ HTTP/JSON + token JWT
+                         ┌─────────────▼─────────────┐
+                         │  Api (Node.js + Express)  │
+                         │  un pool por nodo y por   │
+                         │  usuario de base de datos │
+                         └──┬──────────┬──────────┬──┘
+           app_corporativo  │          │          │  app_admin_li
+                            │          │ app_admin_sj
+                 ┌──────────▼───┐ ┌────▼─────────┐ ┌▼─────────────┐
+                 │ corporativo  │ │   sanjose    │ │    limon     │
+                 │ Ubuntu 22.04 │ │    RHEL 9    │ │ Ubuntu 20.04 │
+                 │ SQL Srv 2022 │ │ SQL Srv 2022 │ │ SQL Srv 2019 │
+                 │ :1441        │ │ :1442        │ │ :1443        │
+                 └──────────────┘ └──────────────┘ └──────────────┘
+                   distribuidor     ◄── linked servers en malla (LS_*) ──►
+                   de la replicación     replicación merge y transaccional
+```
 
-**El reparto se calcula, no está escrito a mano**, así que sirve para cualquier cantidad de vendedores (`04_fragmentacion_horizontal.sql`):
+| Nodo | Base | Sistema operativo | Motor | Puerto | Memoria | Qué guarda |
+|------|------|-------------------|-------|-------:|--------:|------------|
+| `corporativo` | `WWI_Corporativo` | Ubuntu 22.04 | SQL Server 2022 | 1441 | 3 GB | Datos sensibles de clientes, proveedores y personas; maestro de clientes, proveedores y usuarios; copia de las ventas de las sucursales para las estadísticas. Es el distribuidor de la replicación |
+| `sanjose` | `WWI_SanJose` | Red Hat Enterprise Linux 9 | SQL Server 2022 | 1442 | 2 GB | Catálogo compartido sin datos sensibles; su propio inventario, ventas y compras |
+| `limon` | `WWI_Limon` | Ubuntu 20.04 | SQL Server 2019 | 1443 | 2 GB | Igual que San José, con sus propios datos |
+
+- Cada nodo es un contenedor Docker en su propio proyecto (`Docker/nodos/*.yml`), con IP fija en la red `wwi-net` (172.30.0.0/24) y SQL Server Agent activo para la replicación.
+- **Linked servers en malla:** cada nodo ve a los otros dos (`LS_CORPORATIVO`, `LS_SANJOSE`, `LS_LIMON`) con el login `wwi_enlace`, que no es administrador. Así las sucursales se consultan entre sí sin pasar por el corporativo.
+- **Los procedimientos acceden a las tablas solo por sinónimos.** El mismo procedimiento funciona en los tres nodos: en el corporativo un sinónimo apunta a una tabla local y en una sucursal, a la tabla del corporativo por linked server.
+- **La API no filtra, agrupa ni calcula:** cada ruta llama a un procedimiento almacenado con parámetros tipados. La web solo muestra los resultados y envía los filtros.
+
+| Capa | Tecnología |
+|------|------------|
+| Base de datos | SQL Server 2022 y 2019 en contenedores Docker, replicación merge y transaccional, linked servers |
+| API | Node.js, Express 5, mssql, jsonwebtoken, dotenv, cors |
+| Aplicación web | React 19, Vite, Leaflet (mapas de OpenStreetMap) |
+
+---
+
+## 3. Diseño de la base de datos distribuida
+
+Las tres bases parten de restaurar `WideWorldImporters-Full.bak`. Después, cada nodo borra lo que no le corresponde. Así se conservan las llaves, los tipos y las relaciones originales, y los procedimientos del Proyecto 1 siguen funcionando con cambios mínimos.
+
+### 3.1 Fragmentación
+
+#### Horizontal: ventas, compras e inventario por sucursal
+
+El enunciado pide que cada sucursal maneje su propio inventario y facturación, así que cada fila pertenece a una sola sucursal (`04_fragmentacion_horizontal.sql`).
+
+**Criterio: el vendedor.** Cada vendedor se asigna a una sucursal, y cada factura y cada pedido van a la sucursal de quien los vendió. Se comprobó que cada pedido tiene el mismo vendedor que su factura, así que una factura nunca queda separada de su pedido. Se descartaron el cliente (un mismo cliente compra a vendedores de las dos sucursales) y la fecha (una sucursal se quedaría con los años viejos y la otra con los nuevos).
+
+**El reparto se calcula, no está escrito a mano**, así que sirve para cualquier cantidad de vendedores:
 
 1. Se toman todos los vendedores que aparecen en las facturas o en los pedidos, con su cantidad de facturas.
 2. Se ordenan de mayor a menor cantidad de facturas (los empates, por `PersonID`).
-3. Cada vendedor va a la sucursal que lleva menos facturas hasta ese momento. Así las dos sucursales quedan con un volumen parecido aunque los vendedores vendan cantidades muy distintas.
-4. El resultado queda en la tabla `dbo.VendedorSucursal` (`PersonID`, `Sucursal`, `Facturas`). Los tres nodos restauran el mismo respaldo, así que calculan el mismo reparto sin coordinarse.
-5. Antes de borrar se valida que ninguna factura ni pedido quede sin sucursal y que ninguna factura quede en una sucursal distinta de la de su pedido; si pasa, el script se detiene con un error (`50110` / `50111`) y no borra nada.
-
-Con los 10 vendedores de la base original queda así (la diferencia es de 2 facturas):
+3. Cada vendedor va a la sucursal que lleva menos facturas hasta ese momento, para que las dos queden con un volumen parecido aunque los vendedores vendan cantidades muy distintas.
+4. El resultado queda en `dbo.VendedorSucursal` (`PersonID`, `Sucursal`, `Facturas`). Los tres nodos restauran el mismo respaldo, así que calculan el mismo reparto sin coordinarse.
+5. Antes de borrar se valida que ninguna factura ni pedido quede sin sucursal (`50110`) y que ninguna factura quede en una sucursal distinta de la de su pedido (`50111`). Si pasa, el script se detiene y no borra nada.
 
 | Sucursal | Vendedores (`PersonID`) | Facturas |
 |----------|-------------------------|---------:|
 | San José | 7 Amy Trefl, 14 Lily Code, 15 Taj Shand, 16 Archer Lamble, 20 Jack Potter | 35 256 |
 | Limón | 2 Kayla Woodcock, 3 Hudson Onslow, 6 Sophia Hinton, 8 Anthony Grosse, 13 Hudson Hollinworth | 35 254 |
 
-El cálculo se probó también con datos simulados: 11 vendedores, 3, 6 con volúmenes muy desiguales (20 000 a 100 facturas), uno solo y uno que solo tiene pedidos. En todos los casos cada vendedor quedó asignado a una sucursal. El criterio solo reparte los datos que ya existían: una venta nueva se guarda en la sucursal donde está conectado el administrador, sea cual sea el vendedor.
+El cálculo también se probó con datos simulados: 11 vendedores, 3, 6 con volúmenes muy desiguales (de 20 000 a 100 facturas), uno solo y uno que solo tiene pedidos. En todos los casos cada vendedor quedó asignado a una sucursal.
 
-| Tabla | Regla de fragmentación |
-|-------|------------------------|
+| Tabla | Regla |
+|-------|-------|
 | `Sales.Orders`, `Sales.OrderLines` | Por el vendedor del pedido |
 | `Sales.Invoices`, `Sales.InvoiceLines` | Por el vendedor de la factura |
 | `Sales.CustomerTransactions` | Los pagos con factura siguen a su factura; los 26 637 pagos sin factura se reparten por `CustomerTransactionID` par (San José) o impar (Limón) |
-| `Warehouse.StockItemTransactions` | Las salidas (*Stock Issue*, 228 265) siguen a su factura; las entradas (*Stock Receipt*, 8 358) siguen a su orden de compra; los 44 ajustes de inventario se reparten por `StockItemTransactionID` par o impar |
-| `Purchasing.PurchaseOrders`, `PurchaseOrderLines`, `SupplierTransactions` | Por `PurchaseOrderID` par (San José) o impar (Limón). Las 2 074 órdenes tienen el mismo contacto, así que no hay un criterio de negocio mejor. Los 366 pagos a proveedores sin orden se reparten por `SupplierTransactionID` par o impar |
-| `Warehouse.StockItemHoldings` | Cada sucursal tiene una fila por producto. La existencia actual se reparte a la mitad (San José se queda con el sobrante si es impar) |
+| `Warehouse.StockItemTransactions` | Las salidas (228 265) siguen a su factura; las entradas (8 358) siguen a su orden de compra; los 44 ajustes se reparten por `StockItemTransactionID` par o impar |
+| `Purchasing.PurchaseOrders`, `PurchaseOrderLines`, `SupplierTransactions` | Por `PurchaseOrderID` par (San José) o impar (Limón): las 2 074 órdenes tienen el mismo contacto, así que no hay un criterio de negocio mejor. Los 366 pagos sin orden se reparten por `SupplierTransactionID` |
+| `Warehouse.StockItemHoldings` | Cada sucursal tiene una fila por producto, con la mitad de la existencia original (San José se queda con el sobrante si es impar) |
 
-El corporativo no guarda ninguna de estas tablas: las estadísticas consolidadas se calculan desde las sucursales (sección 4).
+**Por qué las compras van por sucursal y no centralizadas:** cada compra es una entrada de inventario en una sucursal concreta, y tres estadísticas (reportes 1, 5 y 8) se calculan con compras y deben poder filtrarse por sucursal.
 
-**Por qué las compras van por sucursal y no centralizadas:** el enunciado dice que cada sucursal maneja su propio inventario, y cada compra es una entrada de inventario (*Stock Receipt*) en una sucursal concreta. Además, las estadísticas deben poder filtrarse por sucursal, y tres de ellas se calculan con compras (reportes 1, 5 y 8). Si las compras estuvieran en el corporativo, esos reportes no tendrían sucursal.
+**IDs nuevos sin choques:** las secuencias de San José arrancan en 1 000 000 y las de Limón en 2 000 000 (`05_secuencias.sql`). Un ID nunca se repite entre nodos, y además indica dónde se creó.
 
-**La fragmentación es correcta:** se comprobó con los datos reales.
+**Comprobado** (con consultas cruzadas por linked server):
 
-| Propiedad | Cómo se comprobó |
-|-----------|------------------|
-| Completitud | San José + Limón suman exactamente lo original en las 10 tablas: 35 256 + 35 254 = 70 510 facturas, 114 176 + 114 089 = 228 265 líneas, 36 834 + 36 761 = 73 595 pedidos, 48 587 + 48 560 = 97 147 pagos, 118 409 + 118 258 = 236 667 movimientos, 1 037 + 1 037 = 2 074 órdenes de compra, y lo mismo en existencias |
-| Disyunción | Ninguna factura, línea, pedido, pago, movimiento ni orden de compra está en las dos sucursales (consulta cruzada por linked server); cada sucursal solo tiene facturas de sus 5 vendedores |
-| Reconstrucción | La unión de las facturas de ambas sucursales devuelve la tabla original; no quedan líneas, pedidos ni movimientos sin su factura |
+| Propiedad | Resultado |
+|-----------|-----------|
+| Completitud | San José + Limón = lo original: 35 256 + 35 254 = 70 510 facturas; 114 176 + 114 089 = 228 265 líneas; 36 834 + 36 761 = 73 595 pedidos; 48 587 + 48 560 = 97 147 pagos; 118 409 + 118 258 = 236 667 movimientos; 1 037 + 1 037 = 2 074 órdenes de compra |
+| Disyunción | Ninguna factura, línea, pedido, pago, movimiento ni orden de compra está en las dos sucursales; cada sucursal solo tiene facturas de sus 5 vendedores |
+| Reconstrucción | La unión de las dos sucursales devuelve la tabla original; ninguna línea queda sin su factura ni ninguna factura sin su pedido |
 
-**IDs nuevos sin choques:** las secuencias de cada sucursal se reinician en un rango propio, así un ID nunca se repite entre nodos y además indica dónde se creó.
+#### Vertical: datos sensibles de clientes, proveedores y personas
 
-| Nodo | Rango de los IDs nuevos (facturas, pedidos, compras, movimientos, productos...) |
-|------|------------------------------------------------------------------------------|
-| Corporativo | Sigue desde el último ID original (todos son menores que 1 000 000) |
-| San José | Desde 1 000 000 |
-| Limón | Desde 2 000 000 |
+El enunciado pide que los datos de privacidad y contacto estén en el corporativo y el resto en las sucursales. Cada tabla se parte en dos fragmentos que comparten la llave primaria, así que se pueden volver a unir con un `JOIN` (`03_fragmentacion_vertical.sql`).
 
-Desde ahí, todo lo nuevo se guarda en la sucursal donde está conectado el administrador.
+| Tabla | Fragmento público (en los tres nodos) | Fragmento sensible (solo en el corporativo) |
+|-------|---------------------------------------|---------------------------------------------|
+| `Sales.Customers` | `CustomerID`, `CustomerName`, `BillToCustomerID`, `CustomerCategoryID`, `BuyingGroupID`, `DeliveryMethodID`, `DeliveryCityID`, `PostalCityID`, `CreditLimit`, `AccountOpenedDate`, `StandardDiscountPercentage`, `IsStatementSent`, `IsOnCreditHold`, `PaymentDays`, `DeliveryRun`, `RunPosition` | `PrimaryContactPersonID`, `AlternateContactPersonID`, `PhoneNumber`, `FaxNumber`, `WebsiteURL`, direcciones de entrega y postal, códigos postales, `DeliveryLocation` |
+| `Purchasing.Suppliers` | `SupplierID`, `SupplierName`, `SupplierCategoryID`, `DeliveryMethodID`, `DeliveryCityID`, `PostalCityID`, `SupplierReference`, `PaymentDays` | Contactos, **datos bancarios**, teléfono, fax, sitio web, direcciones, códigos postales, ubicación, `InternalComments` |
+| `Application.People` | `PersonID`, `FullName`, `PreferredName`, `SearchName`, `IsEmployee`, `IsSalesperson` | `PhoneNumber`, `FaxNumber`, `EmailAddress`, `LogonName`, `HashedPassword`, permisos de inicio de sesión, `Photo`, `UserPreferences`, `CustomFields` |
 
-#### 2.2 Vertical: datos sensibles de clientes, proveedores y personas
+- **La ciudad se queda en las sucursales** porque no es un dato de contacto y la necesitan las ventas y el reporte 10. La dirección exacta, el código postal y la ubicación en el mapa sí son sensibles.
+- En el corporativo, el fragmento sensible vive en `Sales.CustomersSensible`, `Purchasing.SuppliersSensible` y `Application.PeopleSensible`. Las vistas `vClientesCompletos`, `vProveedoresCompletos` y `vPersonasCompletas` reconstruyen la tabla original.
+- En las sucursales, las columnas sensibles también se quitaron del historial (`*_Archive`), para que no quede ninguna copia.
+- Los procedimientos leen el fragmento sensible con los sinónimos `Syn_*Sensible`: en el corporativo apuntan a sus tablas y en las sucursales al corporativo. La ubicación viaja como `Latitud` y `Longitud`, porque el tipo `geography` no se puede leer por linked server.
+- Crear, editar y borrar clientes y proveedores escribe en los dos fragmentos dentro de la misma transacción, y solo funciona en el corporativo. Antes de borrar, el procedimiento revisa por linked server que no tenga ventas ni compras en ninguna sucursal; si una sucursal no responde, no borra.
 
-El enunciado pide que los datos de privacidad y contacto estén en el corporativo y el resto en las sucursales. Cada tabla se parte en dos fragmentos que comparten la llave primaria, así que se pueden volver a unir con un `JOIN` por la llave.
-
-**`Sales.Customers`**
-
-| Fragmento | Columnas |
-|-----------|----------|
-| Sucursales (público) | `CustomerID`, `CustomerName`, `BillToCustomerID`, `CustomerCategoryID`, `BuyingGroupID`, `DeliveryMethodID`, `DeliveryCityID`, `PostalCityID`, `CreditLimit`, `AccountOpenedDate`, `StandardDiscountPercentage`, `IsStatementSent`, `IsOnCreditHold`, `PaymentDays`, `DeliveryRun`, `RunPosition`, `LastEditedBy` |
-| Corporativo (sensible) | `CustomerID`, `PrimaryContactPersonID`, `AlternateContactPersonID`, `PhoneNumber`, `FaxNumber`, `WebsiteURL`, `DeliveryAddressLine1`, `DeliveryAddressLine2`, `DeliveryPostalCode`, `DeliveryLocation`, `PostalAddressLine1`, `PostalAddressLine2`, `PostalPostalCode` |
-
-**`Purchasing.Suppliers`**
-
-| Fragmento | Columnas |
-|-----------|----------|
-| Sucursales (público) | `SupplierID`, `SupplierName`, `SupplierCategoryID`, `DeliveryMethodID`, `DeliveryCityID`, `PostalCityID`, `SupplierReference`, `PaymentDays`, `LastEditedBy` |
-| Corporativo (sensible) | `SupplierID`, `PrimaryContactPersonID`, `AlternateContactPersonID`, `BankAccountName`, `BankAccountBranch`, `BankAccountCode`, `BankAccountNumber`, `BankInternationalCode`, `PhoneNumber`, `FaxNumber`, `WebsiteURL`, `DeliveryAddressLine1`, `DeliveryAddressLine2`, `DeliveryPostalCode`, `DeliveryLocation`, `PostalAddressLine1`, `PostalAddressLine2`, `PostalPostalCode`, `InternalComments` |
-
-**`Application.People`** (contactos de clientes y proveedores, y empleados)
-
-| Fragmento | Columnas |
-|-----------|----------|
-| Sucursales (público) | `PersonID`, `FullName`, `PreferredName`, `SearchName`, `IsEmployee`, `IsSalesperson`, `LastEditedBy` |
-| Corporativo (sensible) | `PersonID`, `PhoneNumber`, `FaxNumber`, `EmailAddress`, `LogonName`, `HashedPassword`, `IsPermittedToLogon`, `IsExternalLogonProvider`, `IsSystemUser`, `Photo`, `UserPreferences`, `CustomFields`, `OtherLanguages` (calculada a partir de `CustomFields`) |
-
-**Por qué la ciudad se queda en las sucursales:** la ciudad (`DeliveryCityID`) es un dato general, no de contacto, y la necesitan las ventas y el reporte 10 (método de envío según el lugar). La dirección exacta, el código postal y la ubicación en el mapa sí son sensibles y van al corporativo.
-
-**Cómo quedó implementada** (`Script/distribuido/03_fragmentacion_vertical.sql`):
-
-| Nodo | Tablas |
-|------|--------|
-| Corporativo | Fragmento público en `Sales.Customers`, `Purchasing.Suppliers` y `Application.People`; fragmento sensible en `Sales.CustomersSensible`, `Purchasing.SuppliersSensible` y `Application.PeopleSensible` (misma llave primaria, con FK a la tabla pública). Las vistas `Sales.vClientesCompletos`, `Purchasing.vProveedoresCompletos` y `Application.vPersonasCompletas` reconstruyen la tabla original con un `JOIN` por la llave |
-| Sucursales | Solo el fragmento público. Las columnas sensibles también se quitaron del historial (`*_Archive`), para que no quede ninguna copia en la sucursal |
-
-- Las tres tablas siguen siendo temporales: el historial se desactiva para quitar las columnas y se vuelve a activar.
-- Los procedimientos leen el fragmento sensible con los sinónimos `Syn_CustomersSensible`, `Syn_SuppliersSensible` y `Syn_PeopleSensible`. En el corporativo apuntan a sus objetos locales y en las sucursales al corporativo por `LS_CORPORATIVO`, así el mismo procedimiento funciona en los tres nodos. Los de clientes y proveedores apuntan a las vistas `vCustomersSensible` y `vSuppliersSensible`, que entregan la ubicación como `Latitud` y `Longitud`, porque el tipo `geography` no se puede leer por linked server.
-- Crear, editar y borrar clientes y proveedores escribe en los dos fragmentos dentro de la misma transacción. Solo funciona en el corporativo. Antes de borrar, el procedimiento revisa por linked server que el cliente o proveedor no tenga facturas, pedidos ni compras en ninguna sucursal; si una sucursal no responde, no borra.
-- Se eliminaron objetos de ejemplo de WWI que usaban columnas sensibles y que la aplicación no usa: las vistas `Website.Customers` y `Website.Suppliers`, 6 procedimientos de `Website`, y la política de seguridad por filas `FilterCustomersBySalesTerritoryRole` con su función.
-
-#### 2.3 Replicada completa: catálogos
-
-Las tres sucursales tienen el mismo catálogo, así que estas tablas están completas en los tres nodos:
+#### Replicada completa: catálogos
 
 | Grupo | Tablas | Quién las modifica |
 |-------|--------|--------------------|
-| Productos | `Warehouse.StockItems`, `StockGroups`, `StockItemStockGroups`, `Colors`, `PackageTypes` | Cualquier nodo (el administrador crea, modifica y borra productos) |
-| Clientes y proveedores (fragmento público) | `Sales.Customers`, `Purchasing.Suppliers`, `Application.People` (públicos) | Solo el corporativo (rol Corporativo) |
-| Listas de referencia | `Application.Cities`, `StateProvinces`, `Countries`, `DeliveryMethods`, `PaymentMethods`, `TransactionTypes`, `Sales.CustomerCategories`, `BuyingGroups`, `Purchasing.SupplierCategories` | Nadie (casi no cambian) |
+| Productos | `Warehouse.StockItems`, `StockGroups`, `StockItemStockGroups`, `Colors`, `PackageTypes` | El administrador de cualquier sucursal |
+| Clientes, proveedores y personas (fragmento público) | `Sales.Customers`, `Purchasing.Suppliers`, `Application.People` | Solo el corporativo |
+| Usuarios del sistema | `Seguridad.Usuarios` | Solo el corporativo |
+| Listas de referencia | Ciudades, provincias, países, métodos de entrega y de pago, categorías, grupos de compra | Nadie: quedan iguales desde la restauración |
 
-### 3. Asignación
+### 3.2 Asignación
 
 | Tabla o fragmento | Corporativo | San José | Limón | Por qué |
 |-------------------|:-----------:|:--------:|:-----:|---------|
-| Ventas, pedidos, compras y movimientos de su sucursal | — | ✔ (los suyos) | ✔ (los suyos) | Rendimiento: cada sucursal factura sin depender de la red |
-| Inventario (`StockItemHoldings`) | — | ✔ (el suyo) | ✔ (el suyo) | Cada sucursal tiene sus propias existencias |
-| Datos sensibles de clientes, proveedores y personas | ✔ | — | — | Privacidad: los datos de contacto y bancarios quedan en un solo lugar controlado |
-| Datos públicos de clientes, proveedores y personas | ✔ (maestro) | ✔ (copia) | ✔ (copia) | Las ventas necesitan el cliente y el vendedor en el mismo nodo |
-| Catálogo de productos | ✔ | ✔ | ✔ | Todas venden los mismos productos; se replica cada cambio |
-| Listas de referencia | ✔ | ✔ | ✔ | Las usan los formularios y los filtros |
-| Usuarios del sistema | ✔ (maestro) | ✔ (copia) | ✔ (copia) | Un solo lugar para administrarlos; la copia permite iniciar sesión en la sucursal aunque el corporativo no responda |
-| Resúmenes para estadísticas | ✔ | — | — | El corporativo consulta las estadísticas por sucursal o consolidadas sin cargar a las sucursales |
+| Ventas, pedidos, compras y movimientos | Sí (copia para estadísticas) | Sí, los suyos | Sí, los suyos | Rendimiento: cada sucursal factura sin depender de la red |
+| Inventario (`StockItemHoldings`) | Sí (copia para estadísticas) | Sí, el suyo | Sí, el suyo | Cada sucursal maneja sus propias existencias |
+| Datos sensibles de clientes, proveedores y personas | Sí | No | No | Privacidad: los datos de contacto y bancarios quedan en un solo lugar controlado |
+| Datos públicos de clientes, proveedores y personas | Sí (maestro) | Sí (copia) | Sí (copia) | Las ventas necesitan el cliente y el vendedor en el mismo nodo |
+| Catálogo de productos | Sí | Sí | Sí | Todas venden los mismos productos |
+| Usuarios del sistema | Sí (maestro) | Sí (copia) | Sí (copia) | Se administran en un solo lugar; la copia permite iniciar sesión en la sucursal aunque el corporativo no responda |
+| Tablas y vistas `Resumen` | Sí | No | No | El corporativo calcula las estadísticas por sucursal o consolidadas sin cargar a las sucursales ni depender de que respondan |
 
-### 4. Replicación
+### 3.3 Replicación
 
-Implementada en `Script/distribuido/07_preparar_replicacion.sql` y `08_replicacion.sql`. El corporativo es el publicador y el **distribuidor**; las suscripciones son *push*, así que todos los agentes corren en el corporativo.
+El corporativo es el **distribuidor**; las suscripciones son *push* y todos los agentes corren en el corporativo con el login `wwi_replicacion`, que no es administrador del servidor (`07_preparar_replicacion.sql`, `08_replicacion.sql`, `09_replicaciones_ventas.sql`).
 
-| Publicación | Tipo | Tablas | Cómo se suscribe | Frecuencia | Por qué |
-|-------------|------|--------|------------------|------------|---------|
-| `PubCatalogo` | **Merge** | `Warehouse.StockItems`, `StockGroups`, `StockItemStockGroups`, `Colors`, `PackageTypes` | Sin snapshot (`@sync_type = 'none'`) | Cada minuto | Se modifica desde cualquier nodo; merge sincroniza en ambos sentidos y resuelve los conflictos |
-| `PubDatos` | **Transaccional** | `Sales.Customers`, `Purchasing.Suppliers`, `Application.People` (fragmento público) | Sin snapshot (`replication support only`) | Continua | Solo cambian en el corporativo; la transaccional los envía en segundos |
-| `PubUsuarios` | **Transaccional** | `Seguridad.Usuarios` | Con snapshot | Continua | En las sucursales la tabla empieza vacía y nada la referencia |
-| `PubVentasSJ`, `PubVentasLI` | **Transaccional** (publica cada sucursal) | Facturas, líneas de factura, órdenes y líneas de compra, movimientos y existencias, solo con las columnas que usan las estadísticas | Con snapshot, hacia `Resumen.<Tabla>_SJ` / `_LI` del corporativo | Continua | El corporativo necesita las ventas de las sucursales para las estadísticas por sucursal y consolidadas (sección 4.1) |
+| Publicación | Tipo | Publica | Tablas | Frecuencia | Por qué |
+|-------------|------|---------|--------|------------|---------|
+| `PubCatalogo` | **Merge** | Corporativo | Las 5 tablas de productos | Cada minuto | Se modifica desde cualquier sucursal: merge sincroniza en ambos sentidos y resuelve los conflictos |
+| `PubDatos` | Transaccional | Corporativo | Fragmento público de clientes, proveedores y personas | Continua | Solo cambian en el corporativo; llegan en segundos |
+| `PubUsuarios` | Transaccional | Corporativo | `Seguridad.Usuarios` (contraseña cifrada) | Continua | Permite iniciar sesión en cualquier nodo |
+| `PubVentasSJ`, `PubVentasLI` | Transaccional | Cada sucursal | Facturas, líneas, compras, líneas de compra, movimientos y existencias, solo con las columnas que usan las estadísticas | Continua | El corporativo necesita las ventas de las sucursales para las estadísticas |
 
-Las listas de referencia (ciudades, métodos de entrega, categorías...) no se publican: quedan iguales en los tres nodos desde la restauración y la aplicación no las modifica.
-
-**Por qué sin snapshot:** el snapshot borra y vuelve a crear las tablas en el suscriptor, y en las sucursales `StockItems`, `Customers` y `People` no se pueden borrar porque las facturas, pedidos y existencias las referencian. Como las tres bases salen del mismo `.bak`, esos datos ya son idénticos (se comprobó con checksums). Antes de suscribir, el script:
-
-1. Desactiva el historial (tablas temporales) de las 7 tablas publicadas, porque la replicación no las acepta (error 13570). `ValidFrom` y `ValidTo` quedan como columnas normales con valor por defecto; las tablas `*_Archive` se conservan como historial anterior.
-2. Agrega a las 5 tablas del catálogo la columna `rowguid` que usa merge: el corporativo la genera y cada sucursal copia los mismos valores por `LS_CORPORATIVO`.
-3. Copia a las sucursales las filas que solo existen en el corporativo (la persona `PagWeb`).
-4. Ejecuta la primera sincronización merge, que crea en cada sucursal los triggers que registran sus cambios. `levantar.ps1` espera a que termine.
-
-**Login de los agentes:** `wwi_replicacion`, dueño de las bases WWI y de `distribution`, con permiso de solo lectura `VIEW SERVER STATE` (lo pide el agente de snapshot). No es administrador del servidor.
-
-**Concurrencia:** si dos sucursales modifican el mismo producto antes de sincronizar, **gana el cambio más reciente**. Se usa el resolvedor de merge *DATETIME (Later Wins)* sobre la columna `LastEditedWhen`, que `SP_UpdateStockItem` actualiza en cada cambio. El cambio que pierde queda registrado en `MSmerge_conflicts_info` del corporativo. Se eligió así porque ninguna sucursal tiene más autoridad que otra sobre el catálogo, y "gana el último" es la regla más fácil de explicar y de mostrar en la revisión.
-
-**Borrar un producto replicado:** `SP_DeleteStockItem` revisa antes, por linked server, que el producto no tenga ventas, pedidos, compras, movimientos ni existencias en la otra sucursal; si la tiene o la sucursal no responde, no lo borra. Sin esta revisión, el borrado llegaría a la otra sucursal, fallaría por sus FK y los nodos quedarían distintos. Las existencias son locales: en las sucursales su FK hacia `StockItems` es `ON DELETE CASCADE`, para que una fila en 0 no bloquee el borrado replicado.
-
-**Comprobado en los contenedores:**
-
-| Prueba | Resultado |
-|--------|-----------|
-| Producto creado y editado en San José | Llega al corporativo en el mismo ciclo y a Limón en el siguiente (≤ 2 min) |
-| San José y Limón editan el mismo producto (Limón 5 s después) | Los tres nodos quedan con el cambio de Limón; el conflicto queda registrado |
-| Cliente editado en el corporativo | Llega a las dos sucursales en menos de 15 s |
-| `admin.sj` inicia sesión en San José | Funciona con la copia replicada y la contraseña cifrada |
-| Borrar en San José un producto con ventas, o en Limón uno que San José tiene en bodega | Rechazado con mensaje claro |
-| Limón apagado mientras San José y el corporativo hacen cambios | Al encenderlo recibe todos los cambios |
-| Corporativo apagado | San José sigue vendiendo, editando productos, listando clientes e iniciando sesión; al volver, los cambios llegan al corporativo y a Limón. El detalle de cliente y de proveedor muestra solo los datos de la sucursal (sección 4.4) |
-
-**Limitación:** el corporativo es el centro de la replicación. Mientras está caído, San José y Limón no intercambian cambios del catálogo (los guardan y se envían cuando vuelve). Si estuviera caído más de 14 días (retención de la publicación merge), habría que reinicializar las suscripciones.
-
-#### 4.3 Concurrencia dentro de un nodo
-
-| Caso | Problema sin control | Cómo se resuelve |
-|------|----------------------|------------------|
-| Dos ventas del mismo producto al mismo tiempo (`SP_InsertSale`) | Con `READ COMMITTED`, las dos leen la misma existencia, las dos pasan la revisión y las dos descuentan: la existencia queda negativa | **Bloqueo pesimista.** Dentro de la transacción, antes de revisar, la venta lee la existencia de sus productos `WITH (UPDLOCK, ROWLOCK)`. Otra venta de esos productos espera ahí hasta el `COMMIT` y después lee la existencia ya descontada; si no alcanza, recibe el error `50015`. Ventas de productos distintos no se esperan entre sí |
-| Dos usuarios editan el mismo producto, o una venta ocurre mientras alguien edita (`SP_UpdateStockItem`) | El último en guardar sobrescribe el cambio del otro sin enterarse, o devuelve la existencia a un valor viejo y "borra" la venta del inventario | **Control optimista.** `SP_GetStockItemDetails` devuelve `Version`: la fecha de última edición del producto (`StockItems.LastEditedWhen`, que también cambia cuando llega una edición replicada desde otro nodo) y la de su existencia (`StockItemHoldings.LastEditedWhen`, que cambia con cada venta). La web la guarda al abrir el formulario y la envía al guardar. El procedimiento vuelve a leer la versión con `UPDLOCK` dentro de la transacción y, si cambió, lanza `50026` («Otro usuario modificó este producto…»); la API responde `409` |
-
-- `Version` viaja como texto (`CONVERT(varchar(27), …, 121)`) porque JavaScript solo guarda milisegundos y `datetime2` tiene 100 nanosegundos: como fecha, la comparación fallaría siempre.
-- La revisión de la versión y la actualización ocurren bajo el mismo bloqueo, así que dos guardados simultáneos no pueden pasar la revisión a la vez.
-- `@Version` es opcional (`NULL` no revisa) para que los scripts de ejemplo sigan funcionando; la web siempre la envía.
+- **Productos y clientes se suscriben sin snapshot,** porque en las sucursales esas tablas no se pueden borrar (las facturas y existencias las referencian) y ya son idénticas, ya que salen del mismo respaldo. Antes de suscribir, el script desactiva el historial de las tablas temporales (la replicación no las acepta), agrega la columna `rowguid` de merge con los mismos valores en los tres nodos y ejecuta la primera sincronización.
+- **Las ventas llegan al corporativo** en el esquema `Resumen` (`Facturas_SJ`, `LineasFactura_LI`…), con snapshot. Las vistas `Resumen.vFacturas`, `vLineasFactura`, `vCompras`, `vLineasCompra`, `vMovimientos` y `vExistencias` unen las dos sucursales con una columna `Sucursal` (`SJ` o `LI`), y los sinónimos del corporativo apuntan a ellas. Así las 10 estadísticas reciben `@Sucursal`: `SJ`, `LI` o `NULL` para el consolidado.
+- **Borrar un producto replicado:** `SP_DeleteStockItem` revisa antes, por linked server, que el producto no tenga ventas, compras, movimientos ni existencias en la otra sucursal. Si las tiene o la sucursal no responde, no lo borra; así el borrado replicado nunca falla en otro nodo.
+- WWI trae un índice *columnstore* en `StockItemTransactions` que la replicación no acepta (error 35353). En las sucursales se reemplaza por la llave primaria agrupada.
 
 **Comprobado:**
 
 | Prueba | Resultado |
 |--------|-----------|
-| Una sesión revisa la existencia de un producto con 5 unidades y tarda 8 s en descontar; mientras tanto otra sesión vende 5 con `SP_InsertSale` | Versión anterior del procedimiento: las dos venden y la existencia queda en **−5**. Versión con `UPDLOCK`: la segunda espera, lee 0 y es rechazada con `50015`; la existencia queda en **0** |
-| Dos guardados con la misma versión | El primero responde `204`; el segundo, `409` |
-| Abrir el producto, registrar una venta de 3 unidades y guardar el formulario | `409`: el formulario traía 87 805 unidades y la existencia real era 87 802; no se pierde la venta |
-| En la web, otro usuario guarda el producto mientras el formulario está abierto | El formulario muestra el mensaje de conflicto y no se cierra; al volver a abrirlo y guardar, se actualiza |
+| Producto creado y editado en San José | Llega al corporativo en el mismo ciclo y a Limón en el siguiente (≤ 2 min) |
+| San José y Limón editan el mismo producto (Limón 5 s después) | Los tres nodos quedan con el cambio de Limón y el conflicto queda registrado |
+| Cliente editado en el corporativo | Llega a las dos sucursales en menos de 15 s |
+| Borrar en San José un producto con ventas, o en Limón uno que San José tiene en bodega | Rechazado con mensaje claro |
+| Tablas `Resumen` | Tienen exactamente las mismas filas que cada sucursal (35 256 facturas de San José y 35 254 de Limón); una venta nueva llega en menos de 15 s y al borrarla también se borra allá |
 
-#### 4.1 Ventas de las sucursales en el corporativo (`09_replicaciones_ventas.sql`, `10_vistas_resumen.sql`)
+### 3.4 Vistas materializadas del corporativo
 
-El corporativo no guarda transacciones propias, pero sus estadísticas deben poder verse por sucursal o consolidadas. Para no consultar a las sucursales en cada estadística (lento, y falla si una sucursal no responde), cada sucursal **replica** al corporativo sus datos de ventas, compras, movimientos y existencias:
-
-| Sucursal | Publicación | Tablas en el corporativo |
-|----------|-------------|--------------------------|
-| San José | `PubVentasSJ` | `Resumen.Facturas_SJ`, `LineasFactura_SJ`, `Compras_SJ`, `LineasCompra_SJ`, `Movimientos_SJ`, `Existencias_SJ` |
-| Limón | `PubVentasLI` | Las mismas con sufijo `_LI` |
-
-- Las sucursales usan al corporativo como **distribuidor remoto**; los agentes corren en el corporativo con el login `wwi_replicacion`.
-- Solo viajan las columnas que usan las estadísticas (partición vertical); por ejemplo, `Facturas_SJ` tiene `InvoiceID`, `CustomerID`, `SalespersonPersonID`, `DeliveryMethodID` e `InvoiceDate`.
-- La suscripción usa **snapshot**: crea las tablas `Resumen.*` y copia los datos existentes en el orden correcto, así ninguna venta hecha durante la copia se pierde. En el corporativo nada referencia esas tablas, así que se pueden crear y borrar sin problema.
-- WWI trae un índice *columnstore* agrupado en `StockItemTransactions`, y la replicación no acepta esas tablas (error 35353). En las sucursales se reemplaza por la llave primaria agrupada.
-- Las vistas `Resumen.vFacturas`, `vLineasFactura`, `vCompras`, `vLineasCompra`, `vMovimientos` y `vExistencias` unen las tablas de las dos sucursales con una columna `Sucursal` (`SJ` o `LI`): una estadística filtra con `WHERE Sucursal = @Sucursal` o toma todo para el consolidado.
-- En el corporativo `Syn_StockItemHoldings` apunta a `Resumen.vExistencias`, que tiene una fila por sucursal. Para que la lista y el detalle de productos no repitan cada producto, los procedimientos de productos leen `dbo.vExistenciasProducto` (creada en `Script/sql/sp_productos.sql`): en las sucursales es su tabla de existencias tal cual; en el corporativo suma las dos sucursales por producto y deja en `NULL` los datos propios de cada bodega (ubicación, costo, niveles de reorden).
-
-**Comprobado:** el corporativo tiene exactamente las mismas filas que cada sucursal en las 12 tablas (por ejemplo, 35 256 facturas de San José y 35 254 de Limón; la vista consolida 70 510). Una venta nueva en San José llega al corporativo en menos de 15 s, con su línea y el cambio de existencias; al borrarla, también se borra allá.
-
-Las 10 estadísticas leen de estas vistas (por medio de los sinónimos del corporativo) y reciben `@Sucursal`: `SJ`, `LI` o `NULL` para el consolidado.
-
-#### 4.2 Vistas materializadas (`12_vistas_indexadas.sql`)
-
-Una vista con `UNION ALL` no se puede indexar, así que se materializa cada sucursal por separado y el consolidado une los índices ya calculados:
+`12_vistas_indexadas.sql`. SQL Server no permite indexar una vista con `UNION ALL`, así que se materializa cada sucursal por separado y el consolidado une los índices ya calculados:
 
 | Vista | Qué guarda | Índice |
 |-------|------------|--------|
-| `Resumen.ivVentasMes_SJ` / `_LI` | Por año y mes: líneas (`COUNT_BIG(*)`), unidades, monto (`SUM(ExtendedPrice)`) y ganancia (`SUM(LineProfit)`), de `Facturas_X` ⋈ `LineasFactura_X` | `CREATE UNIQUE CLUSTERED INDEX` sobre `(Anio, Mes)` |
-| `Resumen.ivComprasMes_SJ` / `_LI` | Por año y mes: líneas, bultos y monto esperado (`SUM(OrderedOuters * ISNULL(ExpectedUnitPricePerOuter, 0))`), de `Compras_X` ⋈ `LineasCompra_X` | Igual |
-| `Resumen.vVentasMes`, `Resumen.vComprasMes` | Consolidado con columna `Sucursal`: une las dos vistas indexadas leyendo sus índices con `WITH (NOEXPAND)` | — |
+| `Resumen.ivVentasMes_SJ` / `_LI` | Por año y mes: líneas (`COUNT_BIG(*)`), unidades, monto (`SUM(ExtendedPrice)`) y ganancia (`SUM(LineProfit)`) | `UNIQUE CLUSTERED INDEX (Anio, Mes)` |
+| `Resumen.ivComprasMes_SJ` / `_LI` | Por año y mes: líneas, bultos y monto esperado | Igual |
+| `Resumen.vVentasMes`, `vComprasMes` | Consolidado con columna `Sucursal`: une las vistas indexadas leyendo sus índices con `WITH (NOEXPAND)` | No tiene índice propio: lee los índices de las vistas indexadas |
 
-- Son `WITH SCHEMABINDING`, usan solo `INNER JOIN`, `COUNT_BIG(*)` y `SUM` sobre expresiones que no pueden ser `NULL` (por eso el `ISNULL` en el precio de compra), como exige SQL Server. Cuentan líneas y no facturas porque `COUNT(DISTINCT)` no se permite en una vista indexada.
-- SQL Server mantiene los índices solo: cada inserción, cambio o borrado que la replicación aplica en `Resumen.*` actualiza la fila del mes correspondiente.
-- Una tabla con una vista `SCHEMABINDING` encima no se puede borrar. Por eso los artículos de facturas, líneas de factura, compras y líneas de compra se publican con `pre_creation_cmd = 'delete'` (`09`): si la suscripción se reinicializa, el agente vacía esas tablas y las vuelve a llenar en lugar de borrarlas. Esa opción no se puede cambiar en una suscripción activa sin reinicializarla, así que nodos levantados antes de este cambio deben reconstruirse desde cero; el `12` avisa si encuentra artículos con la opción vieja.
+- Son `WITH SCHEMABINDING`, usan solo `INNER JOIN`, `COUNT_BIG(*)` y `SUM` sobre expresiones que no pueden ser `NULL`, como exige SQL Server. Cuentan líneas y no facturas porque `COUNT(DISTINCT)` no se permite en una vista indexada.
+- SQL Server mantiene los índices solo: cada cambio que la replicación aplica en `Resumen.*` actualiza la fila del mes correspondiente.
+- Una tabla con una vista `SCHEMABINDING` encima no se puede borrar. Por eso esos artículos se publican con `pre_creation_cmd = 'delete'`: si la suscripción se reinicializa, el agente vacía las tablas y las vuelve a llenar en lugar de borrarlas.
 
-**Comprobado** (después de reconstruir desde cero):
+**Comprobado:**
 
 | Prueba | Resultado |
 |--------|-----------|
-| Materializadas | Las 4 vistas tienen índice clúster con 41 filas propias cada una (un mes por fila, enero 2013 a mayo 2016) |
-| Mismo resultado que calcular desde cero | 0 filas distintas en ventas y compras de las dos sucursales; el consolidado suma las 228 265 líneas |
-| Usa los índices | El total por año desde `vVentasMes` lee 4 páginas de los índices de las vistas; calcularlo desde las tablas lee 1 991 páginas y usa 1 521 ms de CPU |
+| Materializadas | Las 4 vistas tienen índice clúster con 41 filas propias (un mes por fila, de enero de 2013 a mayo de 2016) |
+| Mismo resultado que calcular desde cero | 0 filas distintas en las cuatro; el consolidado suma las 228 265 líneas |
+| Usan los índices | El total por año desde `vVentasMes` lee 4 páginas de los índices; calcularlo desde las tablas lee 1 991 páginas y usa 1 521 ms de CPU |
 | Se mantienen con la replicación | Una venta nueva en San José aparece en `ivVentasMes_SJ` en 8 s; al borrarla, la fila del mes desaparece en 8 s |
-| Reinicialización | Reinicializar la suscripción completa de San José vacía y vuelve a llenar las tablas en 27 s; las vistas indexadas siguen existiendo y coinciden con el cálculo desde cero |
+| Reinicialización | Reinicializar toda la suscripción de San José vacía y vuelve a llenar las tablas en 27 s; las vistas siguen existiendo y coinciden con el cálculo desde cero |
 
-#### 4.4 Plan de fallas: qué pasa si un nodo no responde
+### 3.5 Concurrencia
 
-Cómo responde el sistema, en cualquier caso:
+| Caso | Problema sin control | Cómo se resuelve |
+|------|----------------------|------------------|
+| **Dos sucursales modifican el mismo producto** antes de sincronizar | Cada nodo queda con una versión distinta | Merge con el resolvedor *DATETIME (Later Wins)* sobre `LastEditedWhen`: **gana el cambio más reciente** y el que pierde queda registrado en `MSmerge_conflicts_info`. Ninguna sucursal tiene más autoridad que otra sobre el catálogo |
+| **Dos ventas del mismo producto** al mismo tiempo (`SP_InsertSale`) | Las dos leen la misma existencia, las dos pasan la revisión y la existencia queda negativa | **Bloqueo pesimista:** dentro de la transacción, la venta lee la existencia de sus productos `WITH (UPDLOCK, ROWLOCK)`. Otra venta de esos productos espera hasta el `COMMIT`, lee la existencia ya descontada y, si no alcanza, recibe el error `50015`. Ventas de productos distintos no se esperan entre sí |
+| **Dos usuarios editan el mismo producto**, o una venta ocurre mientras alguien lo edita (`SP_UpdateStockItem`) | El último en guardar sobrescribe el cambio del otro, o devuelve la existencia a un valor viejo y "borra" la venta | **Control optimista:** el detalle devuelve una `Version` (fecha de edición del producto, que también cambia cuando llega una edición replicada desde otro nodo, y fecha de edición de su existencia, que cambia con cada venta). Al guardar, el procedimiento la compara con `UPDLOCK` dentro de la transacción y, si cambió, lanza `50026` («Otro usuario modificó este producto…»); la API responde `409` |
 
-- **Tiempos límite:** los linked servers esperan 5 s para conectar y 30 s por consulta; la API espera 5 s para conectar a un nodo. Un nodo caído responde con error en vez de dejar la pantalla colgada.
-- **La API sigue funcionando:** crea la conexión a cada nodo al primer uso. Si un nodo no responde, solo quien lo necesita recibe `503` («El nodo … no responde»); cuando vuelve, la siguiente petición se reconecta sin reiniciar la API.
+`Version` viaja como texto porque JavaScript solo guarda milisegundos y `datetime2` tiene precisión de 100 nanosegundos.
+
+**Comprobado:**
+
+| Prueba | Resultado |
+|--------|-----------|
+| Una sesión revisa un producto con 5 unidades y tarda 8 s en descontar; mientras tanto otra vende 5 | Procedimiento anterior: las dos venden y la existencia queda en **−5**. Con `UPDLOCK`: la segunda espera, es rechazada con `50015` y la existencia queda en **0** |
+| Dos guardados con la misma versión | El primero responde `204`, el segundo `409` |
+| Abrir un producto, registrar una venta de 3 unidades y guardar el formulario | `409`: el formulario traía 87 805 unidades y la existencia real era 87 802; la venta no se pierde |
+| En la web, otro usuario guarda el producto mientras el formulario está abierto | Se muestra el mensaje de conflicto; al volver a abrirlo y guardar, se actualiza |
+
+### 3.6 Seguridad y encriptación
+
+#### Tabla de usuarios con contraseña cifrada
+
+`06_seguridad.sql` crea en los tres nodos `Seguridad.Usuarios` con `IdUser`, `Username`, `Password` (cifrada, `varbinary`), `FullName`, `Active`, `Rol`, `Email`, `HireDate` y `Sucursal`. La base no acepta un administrador sin sucursal ni un corporativo con sucursal.
+
+| Objeto | Qué es |
+|--------|--------|
+| `LlaveUsuarios` | Llave simétrica **AES 256** protegida por el certificado `CertUsuarios`, que a su vez está protegido por la master key de la base. La llave se genera con el mismo `KEY_SOURCE` e `IDENTITY_VALUE` en los tres nodos, así que es la misma y cualquier nodo descifra la contraseña replicada |
+| `Seguridad.SP_CrearUsuario` | Cifra la contraseña con `EncryptByKey` y guarda el usuario. Solo funciona en el corporativo, que es el maestro |
+| `Seguridad.SP_IniciarSesion` | Descifra con `DecryptByKey` y compara dentro de SQL Server. Devuelve solo `IdUser`, `Username`, `FullName`, `Rol` y `Sucursal`, nunca la contraseña |
+
+- La contraseña se cifra con el nombre de usuario como *autenticador*: si se copia la contraseña cifrada de un usuario a otro, ya no se puede descifrar.
+- Un usuario que no existe y una contraseña incorrecta dan el mismo mensaje (`50044`), para no revelar qué usuarios existen.
+- Usuarios de ejemplo: `admin.sj` (Administrador, SJ), `admin.li` (Administrador, LI) y `corporativo` (Corporativo), con la contraseña `USUARIOS_PASSWORD` de `Docker/.env`.
+
+#### Usuarios de la aplicación y usuarios de la base de datos
+
+La API nunca se conecta con `sa`. Cada usuario de la aplicación trabaja con el usuario de base de datos de su rol, que solo existe en su nodo y solo tiene `EXECUTE` sobre los procedimientos de su rol (`11_usuarios_bd.sql`):
+
+| Usuario de la aplicación | Nodo | Usuario de BD | Rol de BD | Puede ejecutar |
+|--------------------------|------|---------------|-----------|----------------|
+| (inicio de sesión) | Los tres | `app_login` | `rol_login` | Solo `Seguridad.SP_IniciarSesion` |
+| Administrador SJ | San José | `app_admin_sj` | `rol_administrador` | Productos (todo), ventas (consultar y crear), consulta de clientes y proveedores, catálogos |
+| Administrador LI | Limón | `app_admin_li` | `rol_administrador` | Igual |
+| Corporativo | Corporativo | `app_corporativo` | `rol_corporativo` | Clientes y proveedores (todo), consulta de productos, las 10 estadísticas, catálogos |
+
+- Ningún rol lee ni modifica tablas directamente: un `SELECT` o un procedimiento de otro rol da el error 229.
+- `app_admin_sj` no puede ni conectarse a Limón o al corporativo (error 18456).
+- Los procedimientos con SQL dinámico rompen el encadenamiento de propiedad, así que tienen el `SELECT` mínimo sobre lo que consulta ese SQL: el administrador sobre las tablas que revisa `SP_ProductoEnUso` y el corporativo sobre los cuatro sinónimos que lee la matriz de ventas. No se usó `EXECUTE AS OWNER` porque con un contexto suplantado los linked servers fallan, salvo con `TRUSTWORTHY`, que es menos seguro.
+- Los linked servers se crean sin cadena de proveedor: con ella, SQL Server los rechaza para todo login que no sea administrador (error 7416).
+
+**Doble barrera:** la API revisa el rol del token antes de llegar a la base (sección 6), y la base vuelve a revisar con los permisos del usuario de BD. Aunque la web o la API tuvieran un error, la base no deja hacer lo que el rol no permite.
+
+### 3.7 Plan de fallas
+
+Cómo responde el sistema cuando un nodo no responde:
+
+- **Tiempos límite:** los linked servers esperan 5 s para conectar y 30 s por consulta; la API espera 5 s para conectar. Un nodo caído responde con error en vez de dejar la pantalla colgada.
+- **La API sigue funcionando:** solo quien necesita el nodo caído recibe `503` («El nodo … no responde»). Cuando el nodo vuelve, la siguiente petición se reconecta sin reiniciar la API.
 - **Inicio de sesión:** se intenta en el corporativo y, si no responde, en San José y luego en Limón, que tienen la tabla de usuarios replicada.
-- **Aviso en la web:** `GET /api/estado-nodos` prueba los tres nodos (conexión de 3 s, resultado guardado 10 s). La web lo consulta cada 20 s y apenas recibe un `503`, y muestra solo los nodos caídos que afectan al usuario, con lo que deja de funcionar para él.
-- **Degradación en lugar de error:** los procedimientos que leen datos de contacto del corporativo (`SP_CLIENTES`, `SP_GetSupplierDetails`, `SP_SearchCustomers`) llaman primero a su versión `_ConContacto` dentro de un `TRY`; si el linked server falla, el `CATCH` llama a la versión `_SinContacto`, que devuelve las mismas columnas con los datos de la sucursal, «No disponible: el corporativo no responde» en los de contacto y `ContactoDisponible = 0`. La consulta remota va en otro procedimiento porque el error del linked server puede ocurrir al compilarla, y un `TRY/CATCH` del mismo nivel no atrapa errores de compilación.
+- **Degradación en lugar de error:** los procedimientos que leen datos de contacto del corporativo (`SP_CLIENTES`, `SP_GetSupplierDetails`, `SP_SearchCustomers`) llaman primero a su versión `_ConContacto` dentro de un `TRY`. Si el linked server falla, el `CATCH` llama a la versión `_SinContacto`, que devuelve las mismas columnas con los datos de la sucursal, «No disponible: el corporativo no responde» y `ContactoDisponible = 0`. La consulta remota va en otro procedimiento porque el error puede ocurrir al compilarla, y un `TRY/CATCH` del mismo nivel no atrapa errores de compilación.
+- **Aviso en la web:** `GET /api/estado-nodos` prueba los tres nodos. La web lo consulta cada 20 s y apenas recibe un `503`, y muestra solo los nodos caídos que afectan al usuario, con lo que deja de funcionar para él.
 - **Recuperación:** la replicación guarda los cambios hechos durante la caída y los entrega cuando el nodo vuelve.
 
 | Nodo caído | Sigue funcionando | No funciona | Al volver |
 |------------|-------------------|-------------|-----------|
-| **Corporativo** | Las dos sucursales: iniciar sesión, ventas (consultar y crear), productos (consultar, crear, editar y borrar), lista de clientes y proveedores, y su detalle con los datos de la sucursal | Datos de contacto y bancarios (detalle de cliente y proveedor, contacto propuesto al crear una venta); estadísticas; administración de clientes y proveedores. San José y Limón no intercambian cambios de productos mientras tanto | Los cambios de productos de cada sucursal llegan al corporativo y a la otra sucursal, y las ventas llegan a las tablas `Resumen` |
-| **San José o Limón** | La otra sucursal, sin cambios. El corporativo: estadísticas, con los datos de esa sucursal hasta la última sincronización | Todo lo del administrador de esa sucursal (`503` y aviso) | Recibe los cambios de productos hechos mientras estaba caída y envía al corporativo sus ventas pendientes |
+| **Corporativo** | Las dos sucursales: iniciar sesión, ventas (consultar y crear), productos (todo), lista y detalle de clientes y proveedores con los datos de la sucursal | Datos de contacto y bancarios; estadísticas; administración de clientes y proveedores; intercambio de productos entre sucursales | Los cambios de productos llegan al corporativo y a la otra sucursal, y las ventas a las tablas `Resumen` |
+| **San José o Limón** | La otra sucursal, sin cambios. El corporativo: estadísticas, con los datos de esa sucursal hasta la última sincronización | Todo lo del administrador de esa sucursal (`503` y aviso) | Recibe los cambios de productos y envía sus ventas pendientes |
 
-- Mientras el corporativo está caído, cada detalle de cliente o proveedor tarda entre 8 y 12 s, porque el proveedor del linked server reintenta la conexión antes de rendirse; después se muestra la versión de la sucursal.
-- Si un nodo estuviera caído más de 14 días (retención de la replicación merge), habría que reinicializar sus suscripciones.
-
-**Comprobado** (con `docker stop` / `docker start`):
+**Comprobado** (con `docker stop` y `docker start`):
 
 | Prueba | Resultado |
 |--------|-----------|
-| Corporativo apagado, `admin.sj` | Inicia sesión por San José. Detalle de cliente y de proveedor con los datos de la sucursal y `ContactoDisponible = 0` (8 a 12 s); buscador de clientes sin contacto propuesto; se crea una venta y se edita un producto; la web muestra el aviso del corporativo y el aviso dentro del detalle |
-| Corporativo de vuelta | La edición del producto llega al corporativo en segundos y a Limón en 72 s; la venta llega a `Resumen.Facturas_SJ` en segundos; los detalles vuelven completos y el aviso desaparece solo |
-| Limón apagado | `admin.li` inicia sesión por el corporativo y recibe `503` con el aviso de su sucursal; `admin.sj` sigue igual; el corporativo consulta las estadísticas de Limón con los datos que ya tenía y ve el aviso de Limón |
+| Corporativo apagado, `admin.sj` | Inicia sesión por San José; los detalles de cliente y proveedor muestran los datos de la sucursal (8 a 12 s); el buscador de clientes funciona sin contacto propuesto; se crea una venta y se edita un producto; la web muestra el aviso |
+| Corporativo de vuelta | El producto editado llega al corporativo en segundos y a Limón en 72 s; la venta llega a `Resumen.Facturas_SJ`; los detalles vuelven completos y el aviso desaparece solo |
+| Limón apagado | `admin.li` inicia sesión por el corporativo y recibe `503` con el aviso de su sucursal; `admin.sj` sigue igual; el corporativo consulta las estadísticas de Limón con los datos que ya tenía |
 | Limón de vuelta | `admin.li` vuelve a trabajar sin reiniciar la API |
 
-### 5. Nombres
+---
 
-| Elemento | Nombre |
-|----------|--------|
-| Bases | `WWI_Corporativo`, `WWI_SanJose`, `WWI_Limon` |
-| Servidores (contenedores) | `corporativo`, `sanjose`, `limon` |
-| Linked servers (cada nodo ve a los otros dos) | `LS_CORPORATIVO`, `LS_SANJOSE`, `LS_LIMON` |
-| Publicaciones | `PubCatalogo` (merge), `PubDatos` y `PubUsuarios` (transaccionales, del corporativo); `PubVentasSJ` y `PubVentasLI` (transaccionales, de cada sucursal) |
-| Esquema de las ventas de las sucursales en el corporativo | `Resumen` (tablas `<Tabla>_SJ` / `_LI`, vistas `v<Tabla>`, vistas indexadas `iv<Resumen>Mes_SJ` / `_LI`) |
-| Logins técnicos | `wwi_enlace` (linked servers), `wwi_replicacion` (agentes de replicación) |
-| Columna de sucursal en los resúmenes | `Sucursal` con los valores `SJ` y `LI` |
-| Tabla de usuarios (corporativo) | `Seguridad.Usuarios` |
-| Llave y certificado de las contraseñas | `LlaveUsuarios` (AES 256), `CertUsuarios` |
-| Usuarios de base de datos para la API | `app_admin_sj`, `app_admin_li`, `app_corporativo`, `app_login` |
-| Roles de base de datos | `rol_administrador`, `rol_corporativo`, `rol_login` |
+## 4. Roles
 
-### 6. Riesgos a revisar en los bloques siguientes
+| Rol | Nodo | Clientes y proveedores | Productos | Ventas | Estadísticas |
+|-----|------|------------------------|-----------|--------|--------------|
+| **Administrador** | Su sucursal | Consultar | Consultar, crear, modificar y eliminar | Consultar y crear (las de su sucursal) | Sin acceso |
+| **Corporativo** | Corporativo | Consultar, crear, modificar y eliminar | Consultar | Sin acceso | Consultar, por sucursal o consolidadas |
 
-- `StockItems`, `Customers`, `Suppliers` y `People` eran **tablas temporales** y la replicación no las acepta. Resuelto en `07_preparar_replicacion.sql`: se desactiva el historial de las tablas publicadas (sección 4).
-- Si el corporativo no responde, el detalle de cliente y de proveedor en las sucursales fallaba, porque sus datos de contacto viven allá. Resuelto: los procedimientos devuelven la parte de la sucursal y lo indican (sección 4.4).
-- La tabla de usuarios se replica con la contraseña ya encriptada, así que la llave simétrica debe crearse igual en los tres nodos (mismo `KEY_SOURCE` e `IDENTITY_VALUE`). Resuelto en `06_seguridad.sql` (sección 7.1).
+El enunciado define lo mínimo de cada rol: el administrador consulta clientes, proveedores, productos y facturas de su negocio y administra los productos; el corporativo consulta las estadísticas. Como también pide que **se mantengan las funcionalidades del Proyecto 1**, se conservaron las que ya existían, asignadas al rol que tiene sentido:
 
-### 7. Roles
-
-El enunciado define dos roles. Cada usuario tiene un rol y, si es administrador, una sucursal.
-
-| Rol | Nodo al que se conecta | Clientes y proveedores | Productos | Ventas | Estadísticas |
-|-----|------------------------|------------------------|-----------|--------|--------------|
-| **Administrador** | Su sucursal | Consultar | Consultar, crear, modificar y eliminar | Consultar y crear (las de su sucursal) | — |
-| **Corporativo** | Corporativo | Consultar, crear, modificar y eliminar | Consultar | — | Consultar (por sucursal o consolidado) |
-
-- La gestión de clientes y proveedores del Proyecto 1 se mantiene, pero en el corporativo: ahí están sus datos sensibles y es el maestro que los replica a las sucursales.
-- Crear ventas se mantiene para el administrador, porque cada sucursal maneja su propia facturación.
-- Cada rol usa un usuario de base de datos distinto (`app_admin_sj`, `app_admin_li`, `app_corporativo`) que solo tiene permiso de `EXECUTE` sobre los procedimientos de su rol. Así, aunque la web tuviera un error, la base no deja hacer lo que el rol no permite (sección 7.2).
-
-#### 7.1 Usuarios y contraseñas cifradas
-
-`Script/distribuido/06_seguridad.sql` crea en los tres nodos:
-
-| Objeto | Qué es |
-|--------|--------|
-| `Seguridad.Usuarios` | `IdUser`, `Username`, `Password` (cifrada, `varbinary`), `FullName`, `Active`, `Rol`, `Email`, `HireDate` y `Sucursal`. La base no acepta un administrador sin sucursal ni un corporativo con sucursal |
-| `LlaveUsuarios` | Llave simétrica AES 256 protegida por el certificado `CertUsuarios`, que a su vez protege la master key de la base. El certificado y la master key son distintos en cada nodo, pero la llave se genera con el mismo `KEY_SOURCE` e `IDENTITY_VALUE` (variables `LLAVE_ORIGEN` y `LLAVE_IDENTIDAD` de `Docker/.env`), así que es la misma en los tres y cualquier nodo descifra una contraseña cifrada en el corporativo |
-| `Seguridad.SP_CrearUsuario` | Cifra la contraseña con `EncryptByKey` y guarda el usuario. Solo funciona en el corporativo, que es el maestro |
-| `Seguridad.SP_IniciarSesion` | Descifra con `DecryptByKey` y compara dentro de SQL Server. Devuelve solo `IdUser`, `Username`, `FullName`, `Rol` y `Sucursal`, nunca la contraseña |
-
-Detalles de seguridad:
-
-- La contraseña se cifra con el nombre de usuario como *autenticador*: si alguien copia la contraseña cifrada de un usuario a otro, ya no se puede descifrar.
-- Un usuario que no existe y una contraseña incorrecta dan el mismo mensaje (`50044`), para no revelar qué usuarios existen. La comparación distingue mayúsculas de minúsculas.
-- Los dos procedimientos corren `WITH EXECUTE AS OWNER`: el usuario de la API solo necesita permiso de `EXECUTE` sobre ellos, sin poder leer la tabla ni usar la llave directamente.
-
-Usuarios de ejemplo (se crean solo en el corporativo; las sucursales los reciben por replicación). Su contraseña es la de `USUARIOS_PASSWORD` en `Docker/.env`:
-
-| Usuario | Rol | Sucursal |
-|---------|-----|----------|
-| `admin.sj` | Administrador | SJ |
-| `admin.li` | Administrador | LI |
-| `corporativo` | Corporativo | — |
-
-Errores de estos procedimientos:
-
-| Código | Mensaje |
-|-------:|---------|
-| 50040 | La contraseña debe tener al menos 8 caracteres |
-| 50041 | El rol debe ser Administrador o Corporativo |
-| 50042 | Un administrador debe tener sucursal (SJ o LI) y un usuario corporativo no lleva sucursal |
-| 50043 | Ya existe un usuario con ese nombre |
-| 50044 | Usuario o contraseña incorrectos |
-| 50045 | El usuario está inactivo |
-| 50090 | Los usuarios solo se crean en el corporativo |
-
-#### 7.2 Usuarios de base de datos por rol (`11_usuarios_bd.sql`)
-
-La API no se conecta con `sa`. Cada nodo tiene solo el usuario de su rol y `app_login`, todos con la clave `APP_PASSWORD` de `Docker/.env`:
-
-| Nodo | Usuario | Rol de base de datos |
-|------|---------|----------------------|
-| corporativo | `app_corporativo` | `rol_corporativo` |
-| sanjose | `app_admin_sj` | `rol_administrador` |
-| limon | `app_admin_li` | `rol_administrador` |
-| los tres | `app_login` | `rol_login` |
-
-| Rol | Permiso `EXECUTE` sobre |
-|-----|-------------------------|
-| `rol_login` | Solo `Seguridad.SP_IniciarSesion` |
-| `rol_administrador` | Productos (consultar, crear, modificar y eliminar), ventas (consultar y crear), consulta de clientes y proveedores, y los catálogos de los formularios |
-| `rol_corporativo` | Clientes y proveedores (consultar, crear, modificar y eliminar), consulta de productos, las 10 estadísticas y los catálogos de sus filtros |
-
-- Ningún rol puede leer ni modificar tablas directamente: un `SELECT` o un procedimiento de otro rol da el error 229 (*permission denied*).
-- Un usuario solo existe en su nodo: `app_admin_sj` no puede conectarse a Limón ni al corporativo.
-- `app_login` está en los tres nodos porque `Seguridad.Usuarios` se replica a las sucursales: un administrador puede iniciar sesión aunque el corporativo esté caído.
-- Los procedimientos con SQL dinámico rompen el encadenamiento de propiedad, así que necesitan `SELECT` sobre lo que consulta ese SQL: `rol_administrador` sobre las tablas de líneas y movimientos que revisa `SP_ProductoEnUso` antes de borrar un producto, y `rol_corporativo` sobre `Resumen.vFacturas`, `Resumen.vLineasFactura` y los grupos de productos que lee la matriz de ventas. No se usó `EXECUTE AS OWNER` porque con un contexto suplantado los linked servers fallan, salvo que la base sea `TRUSTWORTHY`, que es menos seguro.
-- El CRUD de clientes y proveedores revisa con `OBJECT_ID` que se esté ejecutando en el corporativo, y `OBJECT_ID` devuelve `NULL` si el usuario no puede ver la tabla. Por eso `rol_corporativo` tiene `VIEW DEFINITION` (solo ver que existe, no leerla) sobre `Sales.CustomersSensible` y `Purchasing.SuppliersSensible`.
-- Los linked servers se crean sin cadena de proveedor (`@provstr`): con ella, SQL Server rechaza el linked server para todo login que no sea `sysadmin` (error 7416, *no login-mapping exists*), aunque el mapeo a `wwi_enlace` exista.
-
-### 8. Decisiones tomadas
-
-1. Vendedores repartidos 5 y 5 como en la sección 2.1.
-2. Compras por sucursal (justificado en la sección 2.1).
-3. En un conflicto de productos gana el cambio más reciente (sección 4).
-4. Dos roles, Administrador y Corporativo, con los permisos de la sección 7.
+- **Administrar clientes y proveedores queda en el corporativo**, porque ahí están sus datos sensibles y es el maestro que los replica a las sucursales. Si lo hiciera el administrador, tendría que escribir por linked server en los datos sensibles de otro nodo.
+- **Crear ventas queda en el administrador**, porque cada sucursal maneja su propia facturación. Modificar y eliminar ventas no se permite a nadie: una factura emitida no debe alterarse.
 
 ---
 
-## Arquitectura
+## 5. Aplicación web
 
-```
-┌──────────────────┐   HTTP/JSON   ┌──────────────────┐   EXEC SP   ┌───────────────────────────┐
-│  WebSite (React) │ ────────────► │   Api (Express)  │ ──────────► │  SQL Server               │
-│  Muestra datos y │ ◄──────────── │  Recibe filtros, │ ◄────────── │  Stored procedures        │
-│  envía filtros   │               │  ejecuta SPs     │  recordset  │  → Sinónimos → Tablas     │
-└──────────────────┘               └──────────────────┘             └───────────────────────────┘
-```
+**Lo nuevo del Proyecto 2:**
 
-- **SQL Server:** los procedimientos almacenados acceden a las tablas únicamente a través de **sinónimos**. Las operaciones de inserción, actualización y borrado usan **transacciones**.
-- **API:** cada ruta llama a un único procedimiento almacenado y devuelve el resultado tal cual. No filtra, agrupa ni calcula.
-- **WebSite:** presenta los datos en tablas, ventanas de detalle y formularios. No manipula ni agrupa datos: la búsqueda, el filtrado, el orden, la **paginación** (`OFFSET/FETCH`) y el **conteo de resultados** (`COUNT(*) OVER()`) los hacen los procedimientos almacenados; la web solo envía los filtros y el número de página. Las listas de los formularios y filtros (categorías, años, meses, grupos...) también salen de la base.
+- **Inicio de sesión:** usuario y contraseña; la sesión se guarda en la pestaña y se cierra con el botón de la barra superior, que muestra el nombre, el rol y la sucursal del usuario conectado.
+- **Menú según el rol:** el administrador ve clientes, proveedores, productos y ventas; el corporativo ve clientes, proveedores, productos y estadísticas. Los botones de crear, editar y eliminar solo aparecen donde el rol puede usarlos.
+- **Selector de sucursal en las estadísticas:** Consolidado, San José o Limón.
+- **Conflicto de edición:** si otro usuario modificó el producto mientras el formulario estaba abierto, se muestra el mensaje y no se guarda.
+- **Aviso de nodos caídos** en la parte inferior de la pantalla, y aviso dentro del detalle cuando los datos de contacto no están disponibles.
 
----
+**Lo que se mantiene del Proyecto 1:** cada módulo tiene tabla de resultados, filtros acumulativos, botón «Restaurar filtros», orden alfabético, paginación en el servidor y ventana de detalle.
 
-## Tecnologías utilizadas
+| Módulo | Filtros | Detalle | Gestión |
+|--------|---------|---------|---------|
+| Clientes | Nombre, categoría, método de entrega | Datos generales, contactos, dirección, teléfono, sitio web y mapa | Crear, editar y eliminar (corporativo) |
+| Proveedores | Nombre, categoría, método de entrega | Datos generales, contactos, dirección, mapa y datos bancarios | Crear, editar y eliminar (corporativo) |
+| Productos | Nombre, grupo, rango de existencia | Proveedor (enlace), empaques, precios, existencia y ubicación | Crear, editar y eliminar (administrador) |
+| Ventas | Cliente, rango de fechas y de montos | Encabezado de la factura y sus líneas con impuestos | Crear ventas con varias líneas; la existencia se valida y se descuenta (administrador) |
+| Estadísticas | Los de cada reporte, más la sucursal | Los 10 reportes del Proyecto 1 | Solo consulta |
 
-| Capa | Tecnología |
-|------|-----------|
-| Base de datos | SQL Server – WideWorldImporters (`WideWorldImporters-Full.bak`) |
-| API | Node.js, Express 5, mssql, dotenv, cors |
-| Aplicación web | React 19, Vite |
-| Mapas | Leaflet + React-Leaflet (OpenStreetMap) |
-| Estilos | CSS propio |
+Los formularios usan listas y buscadores en lugar de pedir IDs, y todas las validaciones de negocio están en los procedimientos almacenados.
 
 ---
 
-## Estructura del repositorio
+## 6. API
 
-```
-├── Script/                          # Todo el código SQL
-│   ├── sql/
-│   │   ├── sinonimos.sql            # Los 22 sinónimos
-│   │   ├── sp_clientes.sql          # Consultas del módulo de clientes
-│   │   ├── sp_proveedores.sql       # Consultas del módulo de proveedores
-│   │   ├── sp_productos.sql         # Consultas del módulo de productos
-│   │   ├── sp_ventas.sql            # Consultas del módulo de ventas
-│   │   ├── sp_catalogos.sql         # Listas y buscadores para formularios y filtros
-│   │   └── ejemplo_ejecucion.sql    # Script de ejemplo que ejecuta los SPs
-│   ├── CRUD/                        # Insert, Update y Delete de cada módulo
-│   │   ├── CLIENTES/
-│   │   ├── PROVEEDORES/
-│   │   ├── PRODUCTOS/
-│   │   └── VENTAS/
-│   ├── estadisticas/                # Los 10 reportes (01_ … 10_)
-│   └── distribuido/                 # Proyecto 2: login de enlace, linked servers, distribuidor,
-│                                    # fragmentación vertical y horizontal, secuencias, usuarios
-│                                    # con contraseña cifrada y verificación
-├── Docker/                          # Proyecto 2: docker-compose.yml, levantar.ps1 y verificar.ps1
-├── Api/                             # Servicio API
-│   ├── index.js                     # Servidor Express y registro de rutas
-│   ├── db.js                        # Un pool por nodo y usuario de base de datos
-│   ├── auth.js                      # Login con JWT y middleware que elige el nodo del usuario
-│   ├── .env.example                 # Plantilla de variables de entorno
-│   └── routes/                      # Una ruta por módulo
-│       ├── clientes.js
-│       ├── proveedores.js
-│       ├── productos.js
-│       ├── ventas.js
-│       ├── estadisticas.js
-│       └── catalogos.js
-└── WebSite/                         # Aplicación web
-    └── src/
-        ├── App.jsx                  # Menú y navegación entre módulos
-        ├── Api.js                   # Funciones para llamar a la API
-        ├── pages/                   # Login, Inicio, Clientes, Proveedores, Productos, Ventas, Estadísticas
-        ├── components/              # Tabla, Filtros, Paginación, Detalle, Factura, Mapa
-        └── styles/                  # Hojas de estilo
-```
+Node.js con Express (`Api/`).
+
+- **Un pool por nodo y por usuario de base de datos** (`db.js`), creado la primera vez que se usa. Si un nodo está caído, la API arranca igual.
+- **Inicio de sesión con JWT** (`auth.js`): `POST /api/auth/login` valida con `Seguridad.SP_IniciarSesion` y devuelve un token de 8 horas con el rol, la sucursal y el nodo del usuario. Cada petición lleva `Authorization: Bearer <token>` y se ejecuta en el nodo del usuario con el usuario de BD de su rol.
+- **Rutas por rol** (`roles.js`): antes de llegar a la base se revisa que el rol pueda usar ese método en ese módulo; si no, `403` («Su rol no tiene acceso a esta operación»).
+- **Códigos HTTP:** `400` datos inválidos o errores de negocio del procedimiento (`THROW 50000+`); `401` sin sesión o sesión vencida; `403` sin permiso; `409` conflicto de edición; `503` nodo caído; `500` errores internos.
+- Todas las consultas son procedimientos almacenados con parámetros tipados; no hay SQL armado con texto ni cálculos en la API.
+
+La referencia completa de rutas está en la [sección 10](#10-referencia-de-la-api).
 
 ---
 
-## Instalación y ejecución
-
-### Nodos del Proyecto 2 (Docker)
-
-Cada nodo es un contenedor con una tecnología distinta:
-
-| Nodo | Puerto | Sistema operativo | Motor |
-|------|-------:|-------------------|-------|
-| `corporativo` | 1441 | Ubuntu 22.04 | SQL Server 2022 |
-| `sanjose` | 1442 | Red Hat Enterprise Linux 9 | SQL Server 2022 |
-| `limon` | 1443 | Ubuntu 20.04 | SQL Server 2019 |
-
-1. Copiar `WideWorldImporters-Full.bak` a `Docker/backup/`.
-2. Crear `Docker/.env` a partir de `Docker/.env.example` con:
-   - la clave de `sa` (`SA_PASSWORD`) y la del login de enlace (`ENLACE_PASSWORD`). Ambas deben tener mayúsculas, minúsculas y números, y al menos 8 caracteres;
-   - las dos frases que generan la llave de las contraseñas (`LLAVE_ORIGEN` y `LLAVE_IDENTIDAD`). No se deben cambiar después de levantar los nodos: las contraseñas ya cifradas solo se descifran con la llave original;
-   - la contraseña de los usuarios de ejemplo (`USUARIOS_PASSWORD`), de al menos 8 caracteres;
-   - la clave de los agentes de replicación (`REPLICACION_PASSWORD`) y la de los usuarios de base de datos de la API (`APP_PASSWORD`), con mayúsculas, minúsculas y números, y al menos 8 caracteres.
-3. Con Docker Desktop abierto, desde la carpeta `Docker`:
-
-```powershell
-.\levantar.ps1
-```
-
-El script hace, en orden:
-
-| Paso | Script | Qué hace |
-|------|--------|----------|
-| 1 | `docker-compose.yml` | Levanta los tres contenedores con SQL Server Agent activo y la zona horaria de Costa Rica |
-| 2 | — | Restaura la base en cada nodo (`WWI_Corporativo`, `WWI_SanJose`, `WWI_Limon`) |
-| 3 | `Script/distribuido/00_login_enlace.sql` | Crea el login `wwi_enlace` en cada nodo, sin permisos de administrador: solo lee, escribe y ejecuta procedimientos en su base. Desactiva la política de seguridad por filas de ejemplo de WWI, que ocultaba los clientes a todo usuario que no fuera dueño de la base |
-| 4 | `Script/distribuido/01_linked_servers.sql` | Crea los linked servers: cada nodo ve a los otros dos (`LS_CORPORATIVO`, `LS_SANJOSE`, `LS_LIMON`), así las sucursales también se consultan entre sí sin depender del corporativo. Se conectan como `wwi_enlace`. Tienen tiempo de espera de 5 s para conectar y 30 s por consulta, para que un nodo caído responda con error en vez de bloquear |
-| 5 | `Script/distribuido/02_distribuidor.sql` | Configura el corporativo como distribuidor de la replicación, con la master key en `distribution` que Microsoft pide antes de replicar |
-| 6 | `Script/distribuido/03_fragmentacion_vertical.sql` | Separa los datos sensibles de clientes, proveedores y personas (sección 2.2) y crea los sinónimos `Syn_*Sensible` |
-| 7 | `Script/distribuido/04_fragmentacion_horizontal.sql` | Reparte ventas, compras, movimientos y existencias entre San José y Limón, y los quita del corporativo (sección 2.1) |
-| 8 | `Script/distribuido/05_secuencias.sql` | Reinicia las secuencias de cada sucursal en su rango de IDs |
-| 9 | `Script/distribuido/06_seguridad.sql` | Crea la tabla de usuarios, la llave de las contraseñas y los procedimientos de login en los tres nodos, y los usuarios de ejemplo en el corporativo (sección 7.1) |
-| 10 | `Script/distribuido/07_preparar_replicacion.sql` | Crea el login `wwi_replicacion`, desactiva el historial de las tablas a replicar, agrega `LastEditedWhen` y las columnas `rowguid` de merge (sección 4) |
-| 11 | `Script/sql`, `Script/CRUD` | Instala los sinónimos y procedimientos del Proyecto 1 en los tres nodos |
-| 12 | `Script/distribuido/08_replicacion.sql` | En las sucursales alinea los datos con el corporativo; en el corporativo crea las publicaciones `PubCatalogo`, `PubDatos` y `PubUsuarios` y sus suscripciones, y espera la primera sincronización |
-| 13 | `Script/distribuido/09_replicaciones_ventas.sql` | En el corporativo registra a las sucursales como publicadoras; en cada sucursal crea `PubVentasSJ` / `PubVentasLI` y la suscripción del corporativo, y espera a que lleguen las ventas (sección 4.1) |
-| 14 | `Script/distribuido/10_vistas_resumen.sql` | Crea en el corporativo las vistas `Resumen.v*` que unen las dos sucursales |
-| 15 | `Script/distribuido/12_vistas_indexadas.sql` | Crea en el corporativo las 4 vistas indexadas de ventas y compras por mes y las vistas de consolidado (sección 4.2); en las sucursales revisa que los artículos de ventas sean compatibles |
-| 16 | `Script/estadisticas` | Instala las 10 estadísticas en el corporativo, que leen de las vistas `Resumen` |
-| 17 | `Script/distribuido/11_usuarios_bd.sql` | Crea en cada nodo el usuario de base de datos de su rol y `app_login`, con permiso solo sobre los procedimientos de su rol (sección 7.2) |
-| 18 | `verificar.ps1` | Muestra el estado de cada nodo, incluidos los usuarios, la llave, la replicación, las tablas `Resumen`, las vistas indexadas y los usuarios de la aplicación |
-
-Los pasos 6, 7 y 10 quedan registrados en la tabla `dbo.ControlFragmentacion` de cada base, y el 12 y el 13 revisan qué publicaciones y suscripciones ya existen: si se vuelven a correr, no repiten nada.
-
-Se puede correr de nuevo sin perder datos. Los límites de memoria suman 7 GB (corporativo 3 GB, porque además es el distribuidor y ahí corren todos los agentes; cada sucursal 2 GB); en uso real los tres nodos rondan 4.5 GB.
-
-#### Comandos útiles
-
-| Para | Comando (desde `Docker`) |
-|------|--------------------------|
-| Ver el estado del sistema distribuido (sistema operativo, motor, Agent, bases y si los linked servers responden) | `.\verificar.ps1` |
-| Simular la caída de una sucursal | `docker stop limon` y luego `.\verificar.ps1`: el corporativo muestra `LS_LIMON : NO RESPONDE` en unos 8 a 12 s |
-| Volver a encenderla | `docker start limon`: en uno o dos minutos recibe los cambios que se hicieron mientras estaba caída |
-| Apagar los tres nodos sin perder datos | `docker compose stop` |
-| Empezar desde cero (borra las bases) | `docker rm -f corporativo sanjose limon`, luego `docker volume rm pry2-bases-2_corporativo-data pry2-bases-2_sanjose-data pry2-bases-2_limon-data` y luego `.\levantar.ps1` |
+## 7. Instalación y ejecución
 
 ### Requisitos
 
-- SQL Server 2019 o superior
-- Node.js 20 o superior
-- Respaldo `WideWorldImporters-Full.bak` ([descarga](https://github.com/Microsoft/sql-server-samples/releases/tag/wide-world-importers-v1.0))
+- Docker Desktop, con al menos 7 GB de memoria para los contenedores (los tres nodos usan unos 4.5 GB en la práctica).
+- Node.js 20 o superior.
+- El respaldo `WideWorldImporters-Full.bak` ([descarga](https://github.com/Microsoft/sql-server-samples/releases/tag/wide-world-importers-v1.0)).
 
-### 1. Base de datos
+### 1. Nodos
 
-Levantar los tres nodos con `Docker/levantar.ps1` (sección *Nodos del Proyecto 2*). Ese script instala todos los procedimientos y los usuarios de base de datos; la API ya no instala scripts al iniciar.
+1. Copiar `WideWorldImporters-Full.bak` a `Docker/backup/`.
+2. Crear `Docker/.env` a partir de `Docker/.env.example`:
+
+   | Variable | Para qué |
+   |----------|----------|
+   | `SA_PASSWORD` | Clave de `sa` en los tres nodos |
+   | `ENLACE_PASSWORD` | Login `wwi_enlace` de los linked servers |
+   | `LLAVE_ORIGEN`, `LLAVE_IDENTIDAD` | Frases que generan la llave de las contraseñas. No se deben cambiar después de levantar los nodos |
+   | `USUARIOS_PASSWORD` | Contraseña de los usuarios de ejemplo (`admin.sj`, `admin.li`, `corporativo`) |
+   | `REPLICACION_PASSWORD` | Login `wwi_replicacion` de los agentes |
+   | `APP_PASSWORD` | Usuarios de base de datos de la API |
+
+   Las claves deben tener mayúsculas, minúsculas y números, y al menos 8 caracteres.
+3. Con Docker Desktop abierto, desde la carpeta `Docker`:
+
+   ```powershell
+   .\levantar.ps1
+   ```
+
+   En Linux o macOS: `./levantar.sh`. Desde cero tarda entre 10 y 15 minutos.
+
+| Paso | Script | Qué hace |
+|-----:|--------|----------|
+| 1 | `Docker/nodos/*.yml` | Levanta los tres contenedores en la red `wwi-net` |
+| 2 | `levantar.ps1` (`RESTORE DATABASE`) | Restaura la base en cada nodo |
+| 3 | `00_login_enlace.sql` | Login `wwi_enlace` en cada nodo |
+| 4 | `01_linked_servers.sql` | Linked servers en malla, con tiempos límite |
+| 5 | `02_distribuidor.sql` | El corporativo como distribuidor de la replicación |
+| 6 | `03_fragmentacion_vertical.sql` | Separa los datos sensibles |
+| 7 | `04_fragmentacion_horizontal.sql` | Reparte ventas, compras e inventario entre las sucursales |
+| 8 | `05_secuencias.sql` | Rangos de IDs por sucursal |
+| 9 | `06_seguridad.sql` | Tabla de usuarios cifrada, llave, login y usuarios de ejemplo |
+| 10 | `07_preparar_replicacion.sql` | Login `wwi_replicacion` y preparación de las tablas |
+| 11 | `Script/sql`, `Script/CRUD` | Sinónimos y procedimientos en los tres nodos |
+| 12 | `08_replicacion.sql` | Publicaciones del corporativo y primera sincronización |
+| 13 | `09_replicaciones_ventas.sql` | Publicaciones de ventas de cada sucursal hacia el corporativo |
+| 14 | `10_vistas_resumen.sql` | Vistas `Resumen` y sinónimos del corporativo |
+| 15 | `12_vistas_indexadas.sql` | Vistas materializadas |
+| 16 | `Script/estadisticas` | Las 10 estadísticas, en el corporativo |
+| 17 | `11_usuarios_bd.sql` | Usuarios de base de datos por rol |
+| 18 | `verificar.ps1` | Estado de cada nodo |
+
+Se puede volver a correr sin perder datos: los pasos de fragmentación quedan registrados en `dbo.ControlFragmentacion` y los de replicación revisan lo que ya existe.
 
 ### 2. API
 
-Crear el archivo `Api/.env` a partir de `Api/.env.example`:
+Crear `Api/.env` a partir de `Api/.env.example`:
 
 ```env
 PORT=3001
@@ -564,28 +447,12 @@ APP_PASSWORD="<la misma APP_PASSWORD de Docker/.env>"
 JWT_SECRET=<frase larga y aleatoria>
 ```
 
-La clave va entre comillas si tiene `#`, porque `dotenv` toma lo que sigue al `#` como comentario.
-
-> La aplicación web espera la API en `http://localhost:3001/api` (ver `WebSite/src/Api.js`).
-
-Desde la carpeta `Api`:
+La clave va entre comillas si tiene `#`, porque `dotenv` toma lo que sigue como comentario. Desde la carpeta `Api`:
 
 ```bash
 npm install
 node index.js
 ```
-
-Cómo se conecta:
-
-| Usuario de la web | Nodo | Usuario de base de datos |
-|-------------------|------|--------------------------|
-| Administrador SJ | San José (1442) | `app_admin_sj` |
-| Administrador LI | Limón (1443) | `app_admin_li` |
-| Corporativo | Corporativo (1441) | `app_corporativo` |
-| Inicio de sesión | Corporativo; si no responde, San José y luego Limón | `app_login` |
-
-- Cada pool se crea la primera vez que se usa. Si un nodo está caído, la API arranca igual y responde `503` solo a quien necesita ese nodo; cuando el nodo vuelve, la siguiente petición se reconecta sin reiniciar la API.
-- El login funciona aunque el corporativo esté caído, porque `Seguridad.Usuarios` se replica a las sucursales.
 
 ### 3. Aplicación web
 
@@ -596,198 +463,139 @@ npm install
 npm run dev
 ```
 
-Abrir la dirección que muestra Vite (por defecto `http://localhost:5173`).
+Abrir `http://localhost:5173` e iniciar sesión con `admin.sj`, `admin.li` o `corporativo`.
 
-### 4. Script de ejemplo (opcional)
+### Comandos útiles
 
-```bash
-sqlcmd -S localhost -U sa -P '<clave>' -d WideWorldImporters -C -I -i Script/sql/ejemplo_ejecucion.sql
+| Para | Comando |
+|------|---------|
+| Ver el estado de los nodos (sistema, motor, Agent, datos, replicación, vistas indexadas, usuarios y linked servers) | `.\verificar.ps1` desde `Docker` |
+| Simular la caída de un nodo | `docker stop limon` (o `sanjose`, `corporativo`) |
+| Volver a encenderlo | `docker start limon`; en uno o dos minutos recibe los cambios pendientes |
+| Apagar los tres nodos sin perder datos | `docker stop corporativo sanjose limon` |
+| Empezar desde cero (borra las bases) | `docker rm -f corporativo sanjose limon`, luego `docker volume rm pry2-bases-2_corporativo-data pry2-bases-2_sanjose-data pry2-bases-2_limon-data` y luego `.\levantar.ps1` |
+
+Las consultas a las vistas indexadas necesitan `QUOTED_IDENTIFIER ON` (`sqlcmd -I`, activo por defecto en SSMS).
+
+---
+
+## 8. Estructura del repositorio
+
+```
+├── Script/                          # Todo el código SQL
+│   ├── distribuido/                 # Proyecto 2, en el orden en que se ejecutan
+│   │   ├── 00_login_enlace.sql      # Login de los linked servers
+│   │   ├── 01_linked_servers.sql    # Linked servers en malla
+│   │   ├── 02_distribuidor.sql      # Distribuidor de la replicación
+│   │   ├── 03_fragmentacion_vertical.sql
+│   │   ├── 04_fragmentacion_horizontal.sql
+│   │   ├── 05_secuencias.sql
+│   │   ├── 06_seguridad.sql         # Usuarios y encriptación
+│   │   ├── 07_preparar_replicacion.sql
+│   │   ├── 08_replicacion.sql       # Productos, clientes y usuarios
+│   │   ├── 09_replicaciones_ventas.sql
+│   │   ├── 10_vistas_resumen.sql
+│   │   ├── 11_usuarios_bd.sql       # Usuarios de base de datos por rol
+│   │   ├── 12_vistas_indexadas.sql  # Vistas materializadas
+│   │   └── 99_verificar_nodo.sql    # Lo usa verificar.ps1
+│   ├── sql/                         # Sinónimos y consultas de cada módulo
+│   ├── CRUD/                        # Insertar, actualizar y eliminar de cada módulo
+│   └── estadisticas/                # Los 10 reportes
+├── Docker/
+│   ├── nodos/                       # corporativo.yml, sanjose.yml, limon.yml
+│   ├── levantar.ps1 / levantar.sh   # Levanta e instala todo
+│   └── verificar.ps1 / verificar.sh # Estado de los nodos
+├── Api/
+│   ├── index.js                     # Servidor y registro de rutas
+│   ├── db.js                        # Pools por nodo y usuario de BD
+│   ├── auth.js                      # Inicio de sesión con JWT y nodo del usuario
+│   ├── roles.js                     # Qué rol puede usar cada ruta
+│   └── routes/                      # Una ruta por módulo, más estado.js
+└── WebSite/
+    └── src/
+        ├── App.jsx                  # Sesión, menú por rol y navegación
+        ├── Api.js                   # Llamadas a la API con el token
+        ├── permisos.js              # Módulos y acciones de cada rol
+        ├── pages/                   # Login, Inicio, Clientes, Proveedores, Productos, Ventas, Estadísticas
+        └── components/              # Tabla, Filtros, Detalle, Factura, Mapa, AvisoNodos…
 ```
 
-La opción `-I` (`QUOTED_IDENTIFIER ON`) es necesaria para los procedimientos de ventas. El script tiene tres partes:
+---
 
-1. Los 10 reportes de estadísticas con filtros de ejemplo.
-2. Las búsquedas y detalles de cada módulo.
-3. Un ciclo crear → actualizar → eliminar de productos y ventas dentro de una transacción, más una prueba de `ROLLBACK`. La base queda igual que antes.
+## 9. Decisiones sobre los datos
+
+Decisiones del Proyecto 1 que siguen vigentes:
+
+- **Subcategoría en los reportes 7 y 8:** WideWorldImporters no tiene subcategorías, pero un producto puede pertenecer a varios grupos. La *categoría* y la *subcategoría* son dos grupos de producto y el reporte toma los productos que pertenecen a ambos.
+- **Impuesto en las ventas:** el `ExtendedPrice` de cada línea ya incluye el impuesto, igual que en la base original.
+- **Matriz de ventas (reporte 6):** los datos terminan en mayo de 2016, por eso ese año aparece incompleto. Un producto en varios grupos suma su venta en cada uno.
+- **Rotación de inventario (reporte 9):** la base no trae saldo de apertura. Se parte de la existencia actual y se retrocede con los movimientos, usando el saldo inicial mínimo que evita inventarios negativos. *Rotación = unidades vendidas ÷ inventario promedio*.
+- **Eliminar registros con historial:** un cliente, proveedor o producto con ventas, compras o movimientos no se puede eliminar; el procedimiento revierte la transacción y devuelve un mensaje claro.
 
 ---
 
-## Objetivos alcanzados
+## 10. Referencia de la API
 
-### SQL Server
+URL base: `http://localhost:3001/api`. Todas las rutas, salvo `/salud` y `/auth/login`, requieren `Authorization: Bearer <token>`.
 
-#### Sinónimos
-
-Se crearon 22 sinónimos en `Script/sql/sinonimos.sql`. Todos los procedimientos usan los sinónimos y nunca el nombre real de la tabla.
-
-`Syn_BuyingGroups`, `Syn_Cities`, `Syn_Colors`, `Syn_Countries`, `Syn_CustomerCategories`, `Syn_Customers`, `Syn_DeliveryMethods`, `Syn_InvoiceLines`, `Syn_Invoices`, `Syn_PackageTypes`, `Syn_People`, `Syn_PurchaseOrderLines`, `Syn_PurchaseOrders`, `Syn_StateProvinces`, `Syn_StockGroups`, `Syn_StockItemHoldings`, `Syn_StockItems`, `Syn_StockItemStockGroups`, `Syn_StockItemTransactions`, `Syn_SupplierCategories`, `Syn_Suppliers`, `Syn_TransactionTypes`.
-
-#### Transacciones
-
-Los procedimientos de inserción, actualización y borrado usan `BEGIN TRANSACTION`, `COMMIT` y `ROLLBACK` dentro de un bloque `TRY/CATCH`. Si algún paso falla, se revierte todo y se devuelve un mensaje de error con `THROW`.
-
-#### Procedimientos de gestión
-
-| Módulo | Listado con filtros | Detalle | Catálogos | Insertar | Actualizar | Eliminar |
-|--------|--------------------|---------|-----------|----------|-----------|----------|
-| Clientes | `SP_LISTA_CLIENTES` | `SP_CLIENTES` | — | `SP_InsertCustomer` | `SP_UpdateCustomer` | `SP_DeleteCustomer` |
-| Proveedores | `SP_GetSuppliers` | `SP_GetSupplierDetails` | `SP_GetSupplierCategories` | `SP_InsertSupplier` | `SP_UpdateSupplier` | `SP_DeleteSupplier` |
-| Productos | `SP_GetStockItems` | `SP_GetStockItemDetails` | `SP_GetStockGroups` | `SP_InsertStockItem` | `SP_UpdateStockItem` | `SP_DeleteStockItem` |
-| Ventas | `SP_GetSales` | `SP_GetSaleHeader`, `SP_GetSaleDetails` | — | `SP_InsertSale` | `SP_UpdateSale` | `SP_DeleteSale` |
-
-#### Reportes y estadísticas
-
-| # | Procedimiento | Qué muestra | Técnica | Filtros |
-|---|---------------|-------------|---------|---------|
-| 1 | `sp_estadistica_proveedor` | Monto máximo, mínimo y promedio de compras a proveedores, por proveedor y categoría (`PurchaseOrders`) | `ROLLUP` | Proveedor y categoría (texto libre) |
-| 2 | `sp_estadistica_cliente` | Monto máximo, mínimo y promedio de ventas a clientes, por cliente y categoría (`Invoices`) | `ROLLUP` | Cliente y categoría (texto libre) |
-| 3 | `sp_top5_productos_ganancia` | Top 5 de productos con más ganancia por año | `DENSE_RANK`, `PARTITION BY` | Año |
-| 4 | `sp_top5_clientes_facturas` | Top 5 de clientes con más facturas por año y su monto total | `DENSE_RANK`, `PARTITION BY` | Rango de años |
-| 5 | `sp_top5_proveedores_ordenes` | Top 5 de proveedores con más órdenes de compra por año y su monto total | `DENSE_RANK`, `PARTITION BY` | Rango de años |
-| 6 | `sp_matriz_ventas_categoria_anio` | Matriz de ventas: categorías de producto (filas) por año (columnas) | `PIVOT` | — |
-| 7 | `sp_seguimiento_compras_cliente` | Resumen mensual por cliente: monto total, primera y última factura del mes, cantidad total, mínima y máxima | Agregados por mes | Año, mes y categoría |
-| 8 | `sp_seguimiento_compras_proveedor` | Lo mismo que el 7, por proveedor y sus órdenes de compra | Agregados por mes | Año, mes y categoría |
-| 9 | `sp_rotacion_inventario` | Rotación de inventario y promedio de días de rotación por producto y año | Inventario promedio | Año, categoría, subcategoría y proveedor |
-| 10 | `sp_metodo_envio_favorito` | Método de envío favorito según el lugar al que se envió la venta, ordenado por cantidad de ventas | `DENSE_RANK`, `PARTITION BY` | Año, mes, categoría de cliente, categoría de producto y producto |
-
-Los años de los filtros se validan contra los años existentes en la base de datos.
-
-### API (Node.js + Express)
-
-- Una ruta por módulo: `/api/clientes`, `/api/proveedores`, `/api/productos`, `/api/ventas` y `/api/estadisticas`.
-- Todas las consultas se hacen con procedimientos almacenados y parámetros tipados (`mssql`). No hay SQL armado con texto ni cálculos en la API.
-- Valida los campos obligatorios antes de llamar al procedimiento.
-- Devuelve códigos HTTP apropiados: `400` para datos inválidos o errores de negocio lanzados por el SP (`THROW 50000+`), `401` sin sesión o con la sesión vencida, `403` si el usuario de base de datos de su rol no tiene permiso sobre el procedimiento, `503` si el nodo no responde y `500` para errores internos.
-- Inicio de sesión con token JWT (8 horas): cada petición lleva `Authorization: Bearer <token>` y se ejecuta en el nodo del usuario con el usuario de base de datos de su rol.
-- `roles.js` revisa el rol del token antes de llegar a la base, con la misma tabla de la sección 7: si el rol no puede usar ese método en ese módulo, responde `403` («Su rol no tiene acceso a esta operación»). La base es la segunda barrera: aunque la API dejara pasar algo, el usuario de base de datos no tiene permiso.
-
-### Aplicación web (React + Vite)
-
-Todos los módulos cumplen con: tabla de resultados, **filtros acumulativos**, botón **Restaurar filtros** que vuelve a consultar todo, **orden alfabético ascendente** por defecto, **paginación** y **ventana de detalle** aparte (con el botón «Ver detalles» o al hacer clic en la fila).
-
-#### Clientes
-
-- **Tabla:** nombre del cliente, categoría y método de entrega.
-- **Filtro:** nombre (texto libre, búsqueda por coincidencia parcial).
-- **Detalle:** nombre, categoría, grupo de compra, contactos primario y alternativo, cliente por facturar, método de entrega, ciudad de entrega, código postal, teléfono y fax, días de gracia, sitio web (enlace), dirección de entrega y postal, y **mapa** con la ubicación.
-- **Filtros:** nombre, categoría y método de entrega.
-- **Gestión:** crear, editar y eliminar. El formulario usa listas (categoría, grupo de compra, método de entrega) y buscadores (contactos, cliente por facturar, ciudades) en lugar de pedir IDs. Si el contacto no existe, se escribe su nombre y el procedimiento `SP_ObtenerOCrearPersona` lo crea en `Application.People` dentro de la misma transacción (también en proveedores).
-
-#### Proveedores
-
-- **Tabla:** nombre del proveedor, categoría y método de entrega.
-- **Filtros:** nombre (texto libre), categoría y método de entrega (selección).
-- **Detalle:** código del proveedor, nombre, categoría, contactos primario y alternativo, método de entrega, ciudad y código postal de entrega, teléfono y fax, sitio web, dirección de entrega y postal, **mapa** con la ubicación, banco, número de cuenta y días de gracia.
-- **Gestión:** crear, editar y eliminar.
-
-#### Productos (inventario)
-
-- **Tabla:** nombre del producto, grupo y cantidad en inventario (Holdings).
-- **Filtros:** nombre (texto libre), grupo (selección) y rango de cantidad disponible.
-- **Detalle:** nombre, proveedor (enlace a su detalle), color, unidad de empaque, empaque exterior, cantidad por empaque, marca, talla, impuesto, precio unitario, precio de venta recomendado, peso, palabras clave, cantidad disponible y ubicación.
-- **Gestión:** crear, editar y eliminar. Todo lo del formulario se guarda en la base: el producto (`StockItems`), su inventario inicial y ubicación (`StockItemHoldings`), sus grupos/categorías (`StockItemStockGroups`) y los comentarios de mercadeo. Proveedor, color y empaques se eligen de listas.
-
-#### Ventas
-
-- **Tabla:** número de factura, fecha, cliente, método de entrega y monto.
-- **Filtros:** cliente (texto libre), rango de fechas y rango de montos.
-- **Detalle (factura):**
-  - *Encabezado:* número de factura, cliente (enlace a su detalle), método de entrega, número de orden, persona de contacto, vendedor, fecha e instrucciones de entrega.
-  - *Líneas:* producto (enlace a su detalle), cantidad, precio unitario, impuesto aplicado, monto del impuesto y total por línea.
-- **Gestión:** crear ventas nuevas con una o varias líneas («+ Agregar producto» / «Eliminar»). Cliente, contacto, vendedor y productos se buscan por nombre; al elegir el producto se proponen su precio e impuesto. El impuesto y los totales los calcula el procedimiento almacenado.
-- **Inventario:** al crear una venta se valida que haya existencias suficientes, se descuenta `QuantityOnHand` y se registra el movimiento en `StockItemTransactions` (tipo *Stock Issue*). Al editar o eliminar una venta se devuelve el inventario.
-- **Paginación en el servidor:** la tabla recorre las más de 70 000 facturas página por página (`SP_GetSales` + `SP_GetSalesCount`).
-- Las validaciones de negocio (nombres repetidos, al menos un grupo por producto, inventario suficiente, quién hizo el cambio `LastEditedBy`) también están en los procedimientos almacenados.
-
-#### Estadísticas
-
-- Selector con los 10 reportes; cada uno muestra solo sus filtros.
-- Selector de sucursal: **Consolidado** (las dos sucursales), **San José** o **Limón**. Se envía como `?sucursal=` y filtra con la columna `Sucursal` de las vistas `Resumen`.
-- Los años, meses y categorías se eligen de listas cargadas de la base (solo aparecen años con datos).
-- Los reportes 7 y 8 se filtran por cliente/proveedor, año, mes, categoría y subcategoría.
-- Resultados en tabla con paginación. En los reportes con `ROLLUP`, las filas de subtotal y total general se muestran como «Total».
-
-#### Sesión y roles
-
-- Pantalla de inicio de sesión; la sesión se guarda en la pestaña y se cierra con el botón de la barra superior, que muestra el nombre, el rol y la sucursal del usuario.
-- El menú y las tarjetas del inicio muestran solo los módulos del rol (sección 7): el administrador ve clientes, proveedores, productos y ventas; el corporativo ve clientes, proveedores, productos y estadísticas.
-- Los botones de crear, editar y eliminar solo aparecen donde el rol puede usarlos: productos para el administrador, clientes y proveedores para el corporativo.
-
-#### Presentación y usabilidad
-
-- Paleta de colores consistente, diseño adaptable a pantallas pequeñas.
-- Validación de formularios y mensajes claros de éxito y error.
-- Los campos sin dato se muestran como «Vacío».
-
----
-
-## Objetivos no alcanzados y decisiones
-
-- **Subcategoría en los reportes 7 y 8:** WideWorldImporters no tiene una tabla de subcategorías, pero un producto puede pertenecer a varios grupos (`StockItemStockGroups`). Por eso la *categoría* y la *subcategoría* son dos grupos de producto: el reporte toma las líneas cuyos productos pertenecen a ambos grupos elegidos.
-- **Editar y eliminar ventas desde la web:** una factura emitida no debería alterarse, así que la interfaz solo permite consultar y crear ventas. Los procedimientos `SP_UpdateSale` y `SP_DeleteSale` sí existen con su transacción, están expuestos en la API (`PUT` y `DELETE /api/ventas/:id`) y se prueban en `ejemplo_ejecucion.sql`.
-- **Impuesto en las ventas:** el `ExtendedPrice` de cada línea ya incluye el impuesto (cantidad × precio + impuesto), igual que en la base original. El encabezado de la factura obtiene el subtotal, los impuestos y el total a partir de las líneas.
-- **Matriz de ventas (reporte 6):** los datos de la base terminan en mayo de 2016, por eso ese año aparece incompleto. Un producto puede estar en varios grupos, así que su venta se suma en cada una de sus categorías.
-- **Rotación de inventario (reporte 9):** la base no trae saldo de apertura y los movimientos de compra y venta no cuadran con la existencia actual. Se parte de la existencia actual y se retrocede con los movimientos; si el resultado fuera negativo, se usa el saldo inicial mínimo que evita inventarios negativos. La fórmula es *rotación = unidades vendidas ÷ inventario promedio*, con *inventario promedio = (inicial + final) ÷ 2*. Por la calidad de los datos la rotación sale baja en muchos productos; es una limitación de la base, no del cálculo.
-- **Eliminar registros con historial:** un cliente, proveedor o producto con ventas, compras o movimientos no se puede eliminar. El procedimiento revierte la transacción y devuelve un mensaje claro que la web muestra al usuario.
-
----
-
-## Referencia de la API
-
-URL base: `http://localhost:3001/api`. Todas las rutas, salvo `/salud` y `/auth/login`, requieren el header `Authorization: Bearer <token>`.
-
-### Sesión — `/auth`
+### Sesión (`/auth`)
 
 | Método | Ruta | Procedimiento | Cuerpo / respuesta |
 |--------|------|---------------|--------------------|
 | POST | `/auth/login` | `Seguridad.SP_IniciarSesion` | Recibe `{ usuario, contrasena }`; devuelve `{ token, usuario: { IdUser, Username, FullName, Rol, Sucursal, nodo }, nodoLogin }`. `401` si el usuario o la contraseña son incorrectos |
-| GET | `/auth/yo` | — | Datos del usuario del token |
+| GET | `/auth/yo` | Ninguno: lee el token | Datos del usuario del token |
 
-### Clientes — `/clientes`
+### Estado de los nodos (`/estado-nodos`)
 
-| Método | Ruta | Procedimiento | Parámetros |
-|--------|------|---------------|------------|
-| GET | `/clientes` | `SP_LISTA_CLIENTES` | `?apodo=` `&categoria=` `&metodo=` |
-| GET | `/clientes/:nombre` | `SP_CLIENTES` | Nombre del cliente |
-| POST | `/clientes` | `SP_InsertCustomer` | Cuerpo JSON |
-| PUT | `/clientes/:id` | `SP_UpdateCustomer` | Cuerpo JSON |
-| DELETE | `/clientes/:id` | `SP_DeleteCustomer` | — |
+| Método | Ruta | Respuesta |
+|--------|------|-----------|
+| GET | `/estado-nodos` | `{ nodos: [{ nodo, responde, ms }], revisado }` para el corporativo, San José y Limón |
 
-### Proveedores — `/proveedores`
+### Clientes (`/clientes`)
 
-| Método | Ruta | Procedimiento | Parámetros |
-|--------|------|---------------|------------|
-| GET | `/proveedores` | `SP_GetSuppliers` | `?name=` `&categoria=` `&metodo=` |
-| GET | `/proveedores/categorias` | `SP_GetSupplierCategories` | — |
-| GET | `/proveedores/:id` | `SP_GetSupplierDetails` | — |
-| POST | `/proveedores` | `SP_InsertSupplier` | Cuerpo JSON |
-| PUT | `/proveedores/:id` | `SP_UpdateSupplier` | Cuerpo JSON |
-| DELETE | `/proveedores/:id` | `SP_DeleteSupplier` | — |
+| Método | Ruta | Procedimiento | Rol | Parámetros |
+|--------|------|---------------|-----|------------|
+| GET | `/clientes` | `SP_LISTA_CLIENTES` | Ambos | `?apodo=` `&categoria=` `&metodo=` |
+| GET | `/clientes/:nombre` | `SP_CLIENTES` | Ambos | Nombre del cliente |
+| POST | `/clientes` | `SP_InsertCustomer` | Corporativo | Cuerpo JSON |
+| PUT | `/clientes/:id` | `SP_UpdateCustomer` | Corporativo | Cuerpo JSON |
+| DELETE | `/clientes/:id` | `SP_DeleteCustomer` | Corporativo | ID del cliente en la ruta |
 
-### Productos — `/productos`
+### Proveedores (`/proveedores`)
 
-| Método | Ruta | Procedimiento | Parámetros |
-|--------|------|---------------|------------|
-| GET | `/productos` | `SP_GetStockItems` | `?name=` `&grupo=` `&min=` `&max=` |
-| GET | `/productos/grupos` | `SP_GetStockGroups` | — |
-| GET | `/productos/:id` | `SP_GetStockItemDetails` | — |
-| POST | `/productos` | `SP_InsertStockItem` | Cuerpo JSON |
-| PUT | `/productos/:id` | `SP_UpdateStockItem` | Cuerpo JSON con `Version` (la que devolvió el detalle); `409` si otro usuario modificó el producto |
-| DELETE | `/productos/:id` | `SP_DeleteStockItem` | — |
+| Método | Ruta | Procedimiento | Rol | Parámetros |
+|--------|------|---------------|-----|------------|
+| GET | `/proveedores` | `SP_GetSuppliers` | Ambos | `?name=` `&categoria=` `&metodo=` |
+| GET | `/proveedores/categorias` | `SP_GetSupplierCategories` | Ambos | Sin parámetros |
+| GET | `/proveedores/:id` | `SP_GetSupplierDetails` | Ambos | ID del proveedor en la ruta |
+| POST | `/proveedores` | `SP_InsertSupplier` | Corporativo | Cuerpo JSON |
+| PUT | `/proveedores/:id` | `SP_UpdateSupplier` | Corporativo | Cuerpo JSON |
+| DELETE | `/proveedores/:id` | `SP_DeleteSupplier` | Corporativo | ID del proveedor en la ruta |
 
-### Ventas — `/ventas`
+### Productos (`/productos`)
 
-| Método | Ruta | Procedimiento | Parámetros |
-|--------|------|---------------|------------|
-| GET | `/ventas` | `SP_GetSales` + `SP_GetSalesCount` | `?cliente=` `&desde=` `&hasta=` `&min=` `&max=` `&pagina=` `&porPagina=` |
-| GET | `/ventas/:id` | `SP_GetSaleHeader` + `SP_GetSaleDetails` | — |
-| POST | `/ventas` | `SP_InsertSale` | Cuerpo JSON con `Lineas` |
-| PUT | `/ventas/:id` | `SP_UpdateSale` | Cuerpo JSON con `Lineas` |
-| DELETE | `/ventas/:id` | `SP_DeleteSale` | — |
+| Método | Ruta | Procedimiento | Rol | Parámetros |
+|--------|------|---------------|-----|------------|
+| GET | `/productos` | `SP_GetStockItems` | Ambos | `?name=` `&grupo=` `&min=` `&max=` |
+| GET | `/productos/grupos` | `SP_GetStockGroups` | Ambos | Sin parámetros |
+| GET | `/productos/:id` | `SP_GetStockItemDetails` | Ambos | Devuelve también `Version` |
+| POST | `/productos` | `SP_InsertStockItem` | Administrador | Cuerpo JSON |
+| PUT | `/productos/:id` | `SP_UpdateStockItem` | Administrador | Cuerpo JSON con `Version`; `409` si otro usuario modificó el producto |
+| DELETE | `/productos/:id` | `SP_DeleteStockItem` | Administrador | ID del producto en la ruta |
 
-### Estadísticas — `/estadisticas`
+### Ventas (`/ventas`)
 
-Solo para el rol corporativo. Las 10 rutas aceptan además `&sucursal=SJ` o `&sucursal=LI`; sin ese parámetro devuelven el consolidado.
+| Método | Ruta | Procedimiento | Rol | Parámetros |
+|--------|------|---------------|-----|------------|
+| GET | `/ventas` | `SP_GetSales` + `SP_GetSalesCount` | Administrador | `?cliente=` `&desde=` `&hasta=` `&min=` `&max=` `&pagina=` `&porPagina=` |
+| GET | `/ventas/:id` | `SP_GetSaleHeader` + `SP_GetSaleDetails` | Administrador | Número de factura en la ruta |
+| POST | `/ventas` | `SP_InsertSale` | Administrador | Cuerpo JSON con `Lineas` |
+
+`PUT` y `DELETE /ventas/:id` existen en la API, pero ningún rol puede usarlos (`403`): una factura emitida no se modifica.
+
+### Estadísticas (`/estadisticas`)
+
+Solo para el rol corporativo. Las 10 rutas aceptan `&sucursal=SJ` o `&sucursal=LI`; sin ese parámetro devuelven el consolidado.
 
 | # | Ruta | Procedimiento | Parámetros |
 |---|------|---------------|------------|
@@ -796,32 +604,26 @@ Solo para el rol corporativo. Las 10 rutas aceptan además `&sucursal=SJ` o `&su
 | 3 | `/estadisticas/top-productos` | `sp_top5_productos_ganancia` | `?anio=` `&anioFin=` |
 | 4 | `/estadisticas/top-clientes` | `sp_top5_clientes_facturas` | `?anioInicio=` `&anioFin=` |
 | 5 | `/estadisticas/top-proveedores` | `sp_top5_proveedores_ordenes` | `?anioInicio=` `&anioFin=` |
-| 6 | `/estadisticas/matriz` | `sp_matriz_ventas_categoria_anio` | — |
+| 6 | `/estadisticas/matriz` | `sp_matriz_ventas_categoria_anio` | Sin parámetros |
 | 7 | `/estadisticas/seguimiento-clientes` | `sp_seguimiento_compras_cliente` | `?cliente=` `&anio=` `&mes=` `&categoriaId=` `&subcategoriaId=` |
 | 8 | `/estadisticas/seguimiento-proveedores` | `sp_seguimiento_compras_proveedor` | `?proveedor=` `&anio=` `&mes=` `&categoriaId=` `&subcategoriaId=` |
 | 9 | `/estadisticas/rotacion` | `sp_rotacion_inventario` | `?anio=` `&categoria=` `&proveedor=` `&categoriaId=` `&subcategoriaId=` |
 | 10 | `/estadisticas/envio-favorito` | `sp_metodo_envio_favorito` | `?anio=` `&mes=` `&catCliente=` `&catProducto=` `&producto=` `&soloFavorito=` |
 
-### Estado de los nodos — `/estado-nodos`
+### Catálogos (`/catalogos`)
 
-| Método | Ruta | Respuesta |
-|--------|------|-----------|
-| GET | `/estado-nodos` | `{ nodos: [{ nodo, responde, ms }], revisado }` para el corporativo, San José y Limón (sección 4.4) |
-
-### Catálogos — `/catalogos`
-
-Listas y buscadores para los formularios y filtros (archivo `Script/sql/sp_catalogos.sql`).
+Listas y buscadores para formularios y filtros (`Script/sql/sp_catalogos.sql`), para los dos roles.
 
 | Método | Ruta | Procedimiento | Parámetros |
 |--------|------|---------------|------------|
-| GET | `/catalogos/categorias-clientes` | `SP_GetCustomerCategories` | — |
-| GET | `/catalogos/categorias-proveedores` | `SP_GetSupplierCategories` | — |
-| GET | `/catalogos/grupos-compra` | `SP_GetBuyingGroups` | — |
-| GET | `/catalogos/metodos-entrega` | `SP_GetDeliveryMethods` | — |
-| GET | `/catalogos/grupos-productos` | `SP_GetStockGroups` | — |
-| GET | `/catalogos/colores` | `SP_GetColors` | — |
-| GET | `/catalogos/tipos-paquete` | `SP_GetPackageTypes` | — |
-| GET | `/catalogos/proveedores` | `SP_GetSuppliersCatalog` | — |
+| GET | `/catalogos/categorias-clientes` | `SP_GetCustomerCategories` | Sin parámetros |
+| GET | `/catalogos/categorias-proveedores` | `SP_GetSupplierCategories` | Sin parámetros |
+| GET | `/catalogos/grupos-compra` | `SP_GetBuyingGroups` | Sin parámetros |
+| GET | `/catalogos/metodos-entrega` | `SP_GetDeliveryMethods` | Sin parámetros |
+| GET | `/catalogos/grupos-productos` | `SP_GetStockGroups` | Sin parámetros |
+| GET | `/catalogos/colores` | `SP_GetColors` | Sin parámetros |
+| GET | `/catalogos/tipos-paquete` | `SP_GetPackageTypes` | Sin parámetros |
+| GET | `/catalogos/proveedores` | `SP_GetSuppliersCatalog` | Sin parámetros |
 | GET | `/catalogos/anios` | `SP_GetYears` | `?tipo=ventas\|compras\|inventario` |
 | GET | `/catalogos/ciudades` | `SP_SearchCities` | `?criterio=` |
 | GET | `/catalogos/personas` | `SP_SearchPeople` | `?criterio=` `&soloVendedores=1` |
