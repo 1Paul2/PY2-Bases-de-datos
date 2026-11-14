@@ -1,0 +1,75 @@
+-- #5
+
+
+CREATE OR ALTER PROCEDURE sp_top5_proveedores_ordenes
+    @anioInicio INT = NULL,  
+    @anioFin INT = NULL,
+    @Sucursal CHAR(2) = NULL,   -- 'SJ', 'LI' o NULL para el consolidado
+    @Pagina INT = NULL,
+    @PorPagina INT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF @anioInicio IS NULL SELECT @anioInicio = MIN(YEAR(OrderDate)) FROM Syn_PurchaseOrders
+                           WHERE @Sucursal IS NULL OR Sucursal = @Sucursal;
+    IF @anioFin    IS NULL SELECT @anioFin    = MAX(YEAR(OrderDate)) FROM Syn_PurchaseOrders
+                           WHERE @Sucursal IS NULL OR Sucursal = @Sucursal;
+
+    IF NOT EXISTS (SELECT 1 FROM Syn_PurchaseOrders WHERE YEAR(OrderDate) = @anioInicio
+                   AND (@Sucursal IS NULL OR Sucursal = @Sucursal))
+        THROW 50001, 'El año de inicio no existe en la base de datos.', 1;
+
+    IF NOT EXISTS (SELECT 1 FROM Syn_PurchaseOrders WHERE YEAR(OrderDate) = @anioFin
+                   AND (@Sucursal IS NULL OR Sucursal = @Sucursal))
+        THROW 50002, 'El año final no existe en la base de datos.', 1;
+
+    IF @anioInicio > @anioFin
+        THROW 50003, 'El año de inicio no puede ser mayor que el año final.', 1;
+
+    WITH TotalPorOrden AS (
+        SELECT
+            PO.PurchaseOrderID,
+            PO.SupplierID,
+            YEAR(PO.OrderDate) AS Anio,
+            SUM(POL.OrderedOuters * POL.ExpectedUnitPricePerOuter) AS TotalOrden
+        FROM Syn_PurchaseOrders PO
+        INNER JOIN Syn_PurchaseOrderLines POL ON POL.PurchaseOrderID = PO.PurchaseOrderID
+        WHERE YEAR(PO.OrderDate) BETWEEN @anioInicio AND @anioFin
+          AND (@Sucursal IS NULL OR PO.Sucursal = @Sucursal)
+        GROUP BY PO.PurchaseOrderID, PO.SupplierID, YEAR(PO.OrderDate)
+    ),
+    OrdenesPorProveedor AS (
+        SELECT
+            T.Anio,
+            S.SupplierID,
+            S.SupplierName,
+            COUNT(*) AS CantidadOrdenes,
+            SUM(T.TotalOrden) AS MontoTotal
+        FROM TotalPorOrden T
+        INNER JOIN Syn_Suppliers S ON S.SupplierID = T.SupplierID
+        GROUP BY T.Anio, S.SupplierID, S.SupplierName
+    ),
+    Ranking AS (
+        SELECT
+            Anio,
+            SupplierName,
+            CantidadOrdenes,
+            MontoTotal,
+            DENSE_RANK() OVER (PARTITION BY Anio ORDER BY CantidadOrdenes DESC) AS Posicion
+        FROM OrdenesPorProveedor
+    )
+    SELECT
+        COUNT(*) OVER () AS TotalRegistros,
+        Anio,
+        Posicion,
+        SupplierName AS Proveedor,
+        CantidadOrdenes,
+        MontoTotal
+    FROM Ranking
+    WHERE Posicion <= 5
+    ORDER BY Anio, Posicion, SupplierName
+    OFFSET (ISNULL(@Pagina, 1) - 1) * ISNULL(@PorPagina, 2147483647) ROWS
+    FETCH NEXT ISNULL(@PorPagina, 2147483647) ROWS ONLY;
+END;
+GO

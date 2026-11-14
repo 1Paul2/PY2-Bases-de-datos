@@ -1,0 +1,148 @@
+/* =========================================================
+   TABLA
+   ========================================================= */
+
+.tabla-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  border-radius: 14px;
+  border: 1px solid rgba(53, 104, 89, 0.15);
+  background: #ffffff;
+  box-shadow: 0 6px 20px -12px rgba(15, 23, 42, 0.10);
+}
+
+table {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: 100%;
+  font-size: 0.88rem;
+}
+
+thead th {
+  background: linear-gradient(180deg, #f8fafc 0%, #eef2f6 100%);
+  color: #334155;
+  font-weight: 700;
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 14px 16px;
+  text-align: left;
+  border-bottom: 1px solid rgba(53, 104, 89, 0.18);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  white-space: nowrap;
+}
+
+thead th:first-child { border-top-left-radius: 14px; }
+thead th:last-child  { border-top-right-radius: 14px; }
+
+tbody td {
+  padding: 12px 16px;
+  color: #334155;
+  border-bottom: 1px solid #f1f5f9;
+  vertical-align: middle;
+}
+
+tbody tr:last-child td { border-bottom: none; }
+
+tbody tr {
+  transition: background-color 0.15s ease;
+}
+
+tbody tr:nth-child(even) {
+  background: #fafcfb;
+}
+
+tbody tr:hover {
+  background: var(--verde-claro, #e9f3ef);
+  cursor: pointer;
+}
+
+tbody tr:hover td {
+  color: #0f172a;
+}
+
+/* Columna de acciones */
+.acciones-fila {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.acciones-fila button {
+  padding: 5px 10px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  border-radius: 7px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #334155;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.acciones-fila button:hover {
+  border-color: var(--verde-principal, #356859);
+  background: var(--verde-claro, #e9f3ef);
+  color: var(--verde-principal, #356859);
+}
+
+.acciones-fila button:last-child:hover {
+  border-color: #b91c1c;
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+/* ---------- Paginación ---------- */
+.paginacion {
+  flex-direction: column;
+  gap: 10px;
+}
+
+.paginacion-rango {
+  font-size: 0.82rem;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.paginacion-rango strong {
+  color: #0f172a;
+}
+
+.paginacion-controles {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.paginacion-salto {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.paginacion-salto input {
+  width: 60px;
+  padding: 7px 8px;
+  border-radius: 8px;
+  border: 1.5px solid #cbd5e1;
+  text-align: center;
+  font-family: inherit;
+  font-size: 0.85rem;
+}
+
+.paginacion-salto input:focus {
+  outline: none;
+  border-color: #356859;
+  box-shadow: 0 0 0 3px rgba(53, 104, 89, 0.15);
+}
+
+.paginacion-salto span {
+  font-size: 0.82rem;
+  color: #64748b;
+  font-weight: 600;
+}

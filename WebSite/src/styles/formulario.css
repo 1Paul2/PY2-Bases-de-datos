@@ -1,0 +1,205 @@
+/* =========================================================
+   FORMULARIOS EN MODAL
+   ========================================================= */
+
+.formulario {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 20px;
+}
+
+.formulario > h2,
+.formulario > .btn-cerrar,
+.formulario > button[type="submit"],
+.formulario > .formulario-ancho {
+  grid-column: 1 / -1;
+}
+
+.formulario label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #475569;
+}
+
+/* Checkboxes horizontales */
+.formulario label:has(input[type="checkbox"]) {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: #f8fafc;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: 0.88rem;
+  color: #334155;
+  cursor: pointer;
+  transition: border-color 0.18s ease, background 0.18s ease;
+}
+
+.formulario label:has(input[type="checkbox"]):hover {
+  border-color: var(--verde-principal, #356859);
+  background: var(--verde-claro, #e9f3ef);
+}
+
+.formulario input:not([type]),
+.formulario input[type="text"],
+.formulario input[type="number"],
+.formulario input[type="date"],
+.formulario input[type="url"],
+.formulario input[type="email"],
+.formulario input[type="tel"],
+.formulario textarea,
+.formulario select {
+  padding: 10px 14px;
+  border-radius: 9px;
+  border: 1.5px solid #cbd5e1;
+  background: #ffffff;
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #0f172a;
+  text-transform: none;
+  letter-spacing: normal;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.formulario input:focus,
+.formulario textarea:focus,
+.formulario select:focus {
+  outline: none;
+  border-color: var(--verde-principal, #356859);
+  box-shadow: 0 0 0 3px rgba(53, 104, 89, 0.15);
+}
+
+.formulario input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--verde-principal, #356859);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.formulario textarea {
+  resize: vertical;
+  min-height: 80px;
+  font-family: inherit;
+}
+
+.formulario button[type="submit"] {
+  margin-top: 10px;
+  padding: 13px 20px;
+  border-radius: 10px;
+  border: none;
+  background: var(--verde-principal, #356859);
+  color: #ffffff;
+  font-size: 0.95rem;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background-color 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease;
+  box-shadow: 0 6px 16px -6px rgba(53, 104, 89, 0.5);
+}
+
+.formulario button[type="submit"]:hover:not(:disabled) {
+  background: var(--verde-oscuro, #274d42);
+  transform: translateY(-1px);
+  box-shadow: 0 10px 22px -8px rgba(53, 104, 89, 0.6);
+}
+
+.formulario button[type="submit"]:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* En móvil, una sola columna */
+@media (max-width: 640px) {
+  .formulario {
+    grid-template-columns: 1fr;
+  }
+}
+/* =========================================================
+   BUSCADOR CON LISTA (SelectorBusqueda)
+   ========================================================= */
+
+.selector-busqueda-control {
+  position: relative;
+}
+
+.selector-busqueda-lista {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: #ffffff;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 9px;
+  box-shadow: 0 12px 28px -10px rgba(15, 23, 42, 0.25);
+}
+
+.selector-busqueda-lista li {
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: #0f172a;
+  text-transform: none;
+  letter-spacing: normal;
+  cursor: pointer;
+}
+
+.selector-busqueda-lista li.resaltado {
+  background: var(--verde-claro, #e9f3ef);
+}
+
+.selector-busqueda-lista li.selector-busqueda-info {
+  color: #64748b;
+  cursor: default;
+  background: transparent;
+}
+
+/* Casillas para elegir varios grupos de producto */
+.formulario .grupo-casillas {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 8px;
+}
+
+.formulario fieldset {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin: 0;
+}
+
+.formulario fieldset legend {
+  padding: 0 6px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #475569;
+}
+
+.formulario .ayuda {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: #64748b;
+  text-transform: none;
+  letter-spacing: normal;
+}

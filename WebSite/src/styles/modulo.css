@@ -1,0 +1,298 @@
+/* =========================================================
+   ESTILOS COMPARTIDOS DE MÓDULOS
+   ========================================================= */
+
+.modulo {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  animation: fadeInModulo 0.35s ease;
+}
+
+@keyframes fadeInModulo {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ---------- Encabezado del módulo ---------- */
+.modulo-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid rgba(53, 104, 89, 0.15);
+  flex-wrap: wrap;
+}
+
+.modulo-header-texto {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.modulo-eyebrow {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--verde-principal, #356859);
+}
+
+.modulo-titulo {
+  margin: 0;
+  font-size: clamp(1.5rem, 2.4vw, 2rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #0f172a;
+  line-height: 1.1;
+}
+
+.modulo-contador {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--verde-claro, #e9f3ef);
+  color: var(--verde-principal, #356859);
+  font-size: 0.78rem;
+  font-weight: 700;
+  width: fit-content;
+  margin-top: 4px;
+}
+
+.modulo-acciones {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+/* ---------- Botones ---------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  border: 1.5px solid transparent;
+  transition: background-color 0.2s ease, border-color 0.2s ease,
+              color 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease;
+  white-space: nowrap;
+}
+
+.btn:active { transform: translateY(1px); }
+
+.btn:focus-visible {
+  outline: 2px solid var(--verde-principal, #356859);
+  outline-offset: 2px;
+}
+
+.btn-primario {
+  background: var(--verde-principal, #356859);
+  color: #ffffff;
+  box-shadow: 0 4px 12px -4px rgba(53, 104, 89, 0.45);
+}
+.btn-primario:hover {
+  background: var(--verde-oscuro, #274d42);
+  box-shadow: 0 8px 20px -6px rgba(53, 104, 89, 0.55);
+}
+
+.btn-secundario {
+  background: #ffffff;
+  color: var(--verde-principal, #356859);
+  border-color: rgba(53, 104, 89, 0.30);
+}
+.btn-secundario:hover {
+  background: var(--verde-claro, #e9f3ef);
+  border-color: var(--verde-principal, #356859);
+}
+
+.btn-fantasma {
+  background: transparent;
+  color: #475569;
+  border-color: #cbd5e1;
+}
+.btn-fantasma:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.btn-mini {
+  padding: 6px 12px;
+  font-size: 0.78rem;
+  border-radius: 8px;
+}
+
+.btn-peligro {
+  background: #ffffff;
+  color: #b91c1c;
+  border-color: rgba(185, 28, 28, 0.30);
+}
+.btn-peligro:hover {
+  background: #fef2f2;
+  border-color: #b91c1c;
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* ---------- Barra de filtros ---------- */
+.barra-filtros {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 18px 20px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  border: 1px solid rgba(53, 104, 89, 0.15);
+  border-radius: 14px;
+  box-shadow: 0 4px 14px -8px rgba(15, 23, 42, 0.08);
+}
+
+.barra-filtros > * {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
+.barra-filtros .btn {
+  flex: 0 0 auto;
+}
+
+/* Selector de reporte (Estadísticas) */
+.selector-reporte {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #334155;
+  max-width: 420px;
+}
+
+.selector-reporte select {
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1.5px solid #cbd5e1;
+  background: #ffffff;
+  font-family: inherit;
+  font-size: 0.9rem;
+  color: #0f172a;
+  cursor: pointer;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.selector-reporte select:hover { border-color: #94a3b8; }
+.selector-reporte select:focus {
+  outline: none;
+  border-color: var(--verde-principal, #356859);
+  box-shadow: 0 0 0 3px rgba(53, 104, 89, 0.15);
+}
+
+/* ---------- Mensajes (éxito / error) ---------- */
+.mensaje {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+  animation: slideInMensaje 0.3s ease;
+}
+
+@keyframes slideInMensaje {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.mensaje::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.mensaje-exito {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+  color: #065f46;
+}
+.mensaje-exito::before { background: #10b981; }
+
+.mensaje-error {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #991b1b;
+}
+.mensaje-error::before { background: #ef4444; }
+
+/* ---------- Estado vacío ---------- */
+.tabla-vacia {
+  padding: 48px 20px;
+  text-align: center;
+  color: #94a3b8;
+  font-size: 0.92rem;
+  background: #f8fafc;
+  border-radius: 12px;
+  border: 1px dashed #cbd5e1;
+}
+
+/* ---------- Responsive ---------- */
+@media (max-width: 640px) {
+  .modulo-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .modulo-acciones { width: 100%; }
+  .modulo-acciones .btn { flex: 1; justify-content: center; }
+  .barra-filtros { padding: 14px; }
+}
+
+.filtros { display: contents; }
+
+.filtro-control {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.filtro-control input,
+.filtro-control select {
+  width: 100%;
+  padding-right: 32px; /* espacio para el botón */
+}
+
+.filtro-limpiar {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: none;
+  background: #e2e8f0;
+  color: #64748b;
+  font-size: 0.7rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+
+.filtro-limpiar:hover {
+  background: #fee2e2;
+  color: #b91c1c;
+}
