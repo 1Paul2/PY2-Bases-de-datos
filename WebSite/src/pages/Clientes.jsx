@@ -73,9 +73,11 @@ export default function Clientes() {
   const [guardando, setGuardando] = useState(false);
 
   useEffect(() => {
+    let vigente = true;
     pedir(`/clientes?${parametrosFiltro(filtros, pagina)}`)
-      .then(res => { setClientes(res.data); setTotal(res.total); setError(''); })
-      .catch(err => setError(err.message));
+      .then(res => { if (vigente) { setClientes(res.data); setTotal(res.total); setError(''); } })
+      .catch(err => { if (vigente) setError(err.message); });
+    return () => { vigente = false; };
   }, [filtros, pagina, recarga]);
 
   const abrirNuevo = () => {

@@ -190,6 +190,7 @@ export default function Estadisticas() {
   }, [filtros]);
 
   useEffect(() => {
+    let vigente = true;
     const params = new URLSearchParams({ pagina, porPagina: POR_PAGINA });
     if (sucursal) params.append('sucursal', sucursal);
 
@@ -203,18 +204,20 @@ export default function Estadisticas() {
 
     pedir(`${configuracion.endpoint}?${params}`)
       .then(res => {
+        if (!vigente) return;
         setFilas(res.data);
         setTotal(res.total);
         setError('');
       })
       .catch(err => {
+        if (!vigente) return;
         setFilas([]);
         setTotal(0);
         setError(err.message);
       });
-  }, [reporte, sucursal, filtrosConsulta, pagina, configuracion.endpoint]); // eslint-disable-line react-hooks/exhaustive-deps
+    return () => { vigente = false; };
+  }, [reporte, sucursal, filtrosConsulta, pagina, configuracion.endpoint]);
 
-  // Al cambiar de reporte o restaurar, los filtros se limpian de inmediato (sin esperar los 300 ms)
   const cambiarReporte = evento => {
     setReporte(evento.target.value);
     setFiltros(filtrosIniciales);

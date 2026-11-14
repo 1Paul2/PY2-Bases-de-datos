@@ -1,24 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { pedir } from '../Api';
 
-/*
-  Campo de texto con búsqueda: el usuario escribe parte del nombre y elige de la lista.
-  Así no hay que escribir IDs a mano; el formulario guarda el ID de la opción elegida.
-
-  Props:
-    etiqueta     texto del label
-    ruta         ruta de la API que busca (recibe ?criterio=)
-    extra        parámetros fijos adicionales, p. ej. { soloVendedores: 1 }
-    campoId      columna con el ID en cada fila
-    campoTexto   columna con el texto a mostrar
-    valor        ID seleccionado actualmente
-    textoInicial texto del valor actual (al editar)
-    onCambio     recibe la fila elegida, o null si se borra
-    requerido    si es obligatorio
-    ancho        ocupa las dos columnas del formulario
-    onTextoLibre si se indica, permite escribir un nombre que no está en la lista
-                 (p. ej. un contacto nuevo); recibe el texto escrito o '' al elegir una opción
-*/
 export default function SelectorBusqueda({
   etiqueta, ruta, extra = {}, campoId, campoTexto, valor, textoInicial = '',
   onCambio, requerido = false, ancho = false, placeholder = 'Escriba para buscar...', onTextoLibre
@@ -31,31 +13,30 @@ export default function SelectorBusqueda({
   const extraTexto = JSON.stringify(extra);
   const inputRef = useRef(null);
 
-  // Si cambia el valor desde afuera (p. ej. se abre otro registro), se actualiza el texto
   useEffect(() => {
     setTexto(textoInicial ?? '');
   }, [textoInicial]);
 
-  // Busca 300 ms después de que el usuario deja de escribir
   useEffect(() => {
     if (!abierto) return undefined;
+    let vigente = true;
     const temporizador = setTimeout(async () => {
       setCargando(true);
       try {
         const params = new URLSearchParams({ ...JSON.parse(extraTexto), criterio: texto.trim() });
         const res = await pedir(`${ruta}?${params}`);
+        if (!vigente) return;
         setOpciones(res.data);
         setResaltado(0);
       } catch {
-        setOpciones([]);
+        if (vigente) setOpciones([]);
       } finally {
-        setCargando(false);
+        if (vigente) setCargando(false);
       }
     }, 300);
-    return () => clearTimeout(temporizador);
+    return () => { vigente = false; clearTimeout(temporizador); };
   }, [texto, abierto, ruta, extraTexto]);
 
-  // Valida con el mensaje nativo del navegador que se haya elegido una opción de la lista
   useEffect(() => {
     if (!inputRef.current) return;
     const sinValor = valor === '' || valor === null || valor === undefined;
