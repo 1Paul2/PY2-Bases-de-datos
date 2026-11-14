@@ -433,6 +433,8 @@ La referencia completa de rutas está en la [sección 10](#10-referencia-de-la-a
 
 Se puede volver a correr sin perder datos: los pasos de fragmentación quedan registrados en `dbo.ControlFragmentacion` y los de replicación revisan lo que ya existe.
 
+Si aparece «Aviso: un agente de replicacion ya estaba en marcha por su horario», no es un error: el script intentó arrancar un agente de replicación que SQL Server Agent ya había puesto en marcha, y continúa. Cualquier otro error sí detiene el script.
+
 ### 2. API
 
 Crear `Api/.env` a partir de `Api/.env.example`:

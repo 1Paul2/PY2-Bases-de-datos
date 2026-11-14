@@ -34,9 +34,14 @@ sql() {
     local ruta salida
     ruta="$(docker exec "$nodo" bash -c 'ls /opt/mssql-tools18/bin/sqlcmd /opt/mssql-tools/bin/sqlcmd 2>/dev/null | head -1')"
     if ! salida="$(docker exec "$nodo" "$ruta" -S localhost -U sa -P "$PASSWORD" -C -b "$@" 2>&1)"; then
-        printf '\033[31m%s\033[0m\n' "$salida" >&2
-        echo "Fallo sqlcmd en $nodo (${*: -1})" >&2
-        exit 1
+        if printf '%s\n' "$salida" | grep -qE 'SQLServerAgent Error: Request to run job .* refused because the job (is already running|already has a pending request)' \
+            && ! printf '%s\n' "$salida" | grep -E '^(Msg [0-9]+, Level|Sqlcmd: Error|HResult 0x)' | grep -qv '^HResult 0x5606'; then
+            printf '\033[33m%s\033[0m\n' 'Aviso: un agente de replicacion ya estaba en marcha por su horario; se continua' >&2
+        else
+            printf '\033[31m%s\033[0m\n' "$salida" >&2
+            echo "Fallo sqlcmd en $nodo (${*: -1})" >&2
+            exit 1
+        fi
     fi
     printf '%s\n' "$salida"
 }

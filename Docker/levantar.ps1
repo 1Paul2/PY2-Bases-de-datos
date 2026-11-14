@@ -19,8 +19,14 @@ function Invoke-Sql($nodo, [string[]]$sqlArgs) {
     $ruta = docker exec $nodo bash -c 'ls /opt/mssql-tools18/bin/sqlcmd /opt/mssql-tools/bin/sqlcmd 2>/dev/null | head -1'
     $salida = docker exec $nodo $ruta -S localhost -U sa -P $password -C -b @sqlArgs 2>&1
     if ($LASTEXITCODE -ne 0) {
-        $salida | ForEach-Object { Write-Host "$_" -ForegroundColor Red }
-        throw "Fallo sqlcmd en $nodo ($($sqlArgs[-1]))"
+        $texto = $salida | ForEach-Object { "$_" }
+        $agente = $texto | Where-Object { $_ -match 'SQLServerAgent Error: Request to run job .* refused because the job (is already running|already has a pending request)' }
+        $otros = $texto | Where-Object { $_ -match '^(Msg \d+, Level|Sqlcmd: Error|HResult 0x)' -and $_ -notmatch '^HResult 0x5606' }
+        if (-not $agente -or $otros) {
+            $salida | ForEach-Object { Write-Host "$_" -ForegroundColor Red }
+            throw "Fallo sqlcmd en $nodo ($($sqlArgs[-1]))"
+        }
+        Write-Host 'Aviso: un agente de replicacion ya estaba en marcha por su horario; se continua' -ForegroundColor Yellow
     }
     $salida
 }
