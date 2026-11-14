@@ -17,7 +17,6 @@ const columnas = [
   { clave: 'TotalAmount', titulo: 'Monto' }
 ];
 
-// [etiqueta, columna que devuelve SP_CLIENTES]
 const camposCliente = [
   ['Nombre', 'Nombre'],
   ['Categoría', 'Categoría'],
@@ -110,6 +109,7 @@ export default function Ventas() {
   const [recarga, setRecarga] = useState(0);
 
   useEffect(() => {
+    let vigente = true;
     const params = new URLSearchParams();
 
     if (filtros.cliente) params.append('cliente', filtros.cliente);
@@ -117,17 +117,18 @@ export default function Ventas() {
     if (filtros.hasta) params.append('hasta', filtros.hasta);
     if (filtros.min) params.append('min', filtros.min);
     if (filtros.max) params.append('max', filtros.max);
-    // La paginación se hace en el SP (hay más de 70 000 facturas)
     params.append('pagina', pagina);
     params.append('porPagina', POR_PAGINA);
 
     pedir(`/ventas?${params}`)
       .then(res => {
+        if (!vigente) return;
         setVentas(res.data);
         setTotal(res.total ?? res.data.length);
         setError('');
       })
-      .catch(err => setError(err.message));
+      .catch(err => { if (vigente) setError(err.message); });
+    return () => { vigente = false; };
   }, [filtros, recarga, pagina]);
 
   const cambiarFiltro = (nombre, valor) => {

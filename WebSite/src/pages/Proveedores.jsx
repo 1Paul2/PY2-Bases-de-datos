@@ -16,7 +16,6 @@ const columnas = [
   { clave: 'DeliveryMethodName', titulo: 'Método de entrega' }
 ];
 
-// [etiqueta que se muestra, columna que devuelve el SP del detalle]
 const camposDetalle = [
   ['Código del proveedor', 'SupplierReference'],
   ['Nombre', 'SupplierName'],
@@ -56,7 +55,6 @@ const formularioInicial = {
   DeliveryAddressLine2: '', PostalAddressLine1: '', PostalAddressLine2: '',
   DeliveryLatitude: '', DeliveryLongitude: '', BankAccountBranch: '',
   BankAccountName: '', BankAccountNumber: '', PaymentDays: '',
-  // LastEditedBy no se envía: lo asigna el procedimiento almacenado
 };
 
 export default function Proveedores() {
@@ -76,7 +74,6 @@ export default function Proveedores() {
   const [textos, setTextos] = useState({});
   const metodos = useCatalogo('/catalogos/metodos-entrega');
   const categoriasForm = useCatalogo('/catalogos/categorias-proveedores');
-  // Para el filtro solo se ofrecen los métodos que tienen proveedores
   const metodosFiltro = useCatalogo('/catalogos/filtros/metodos-proveedores');
 
   useEffect(() => {
@@ -86,13 +83,16 @@ export default function Proveedores() {
   }, []);
 
   useEffect(() => {
+    let vigente = true;
     pedir(`/proveedores?${parametrosFiltro(filtros, pagina)}`)
       .then(res => {
+        if (!vigente) return;
         setProveedores(res.data);
         setTotal(res.total);
         setError('');
       })
-      .catch(err => setError(err.message));
+      .catch(err => { if (vigente) setError(err.message); });
+    return () => { vigente = false; };
   }, [filtros, pagina, recarga]);
 
   const cambiarFiltro = (nombre, valor) => {

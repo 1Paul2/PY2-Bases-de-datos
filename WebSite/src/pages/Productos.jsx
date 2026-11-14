@@ -116,13 +116,16 @@ export default function Productos() {
   }, []);
 
   useEffect(() => {
+    let vigente = true;
     pedir(`/productos?${parametrosFiltro(filtros, pagina)}`)
       .then(res => {
+        if (!vigente) return;
         setProductos(res.data);
         setTotal(res.total);
         setError('');
       })
-      .catch(err => setError(err.message));
+      .catch(err => { if (vigente) setError(err.message); });
+    return () => { vigente = false; };
   }, [filtros, pagina, recarga]);
 
   const cambiarFiltro = (nombre, valor) => {
